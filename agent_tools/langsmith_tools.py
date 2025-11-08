@@ -268,7 +268,7 @@ def get_session_metadata(
 
         # Resolve the session name to UUID if needed
         resolved_session_id = _resolve_session_id(session_id, config)
-
+        print(f"In the GET SESSION METADATA TOOL, going to get the metadata of the provided session id...")
         params = {"k": k, "root_runs_only": str(root_runs_only).lower()}
         print(f"Fetching metadata for session: {session_id} (resolved to: {resolved_session_id})")
         return _make_request(
@@ -340,7 +340,9 @@ def get_runs_from_session(
         if filter_query:
             params["filter"] = filter_query
         print(f"Fetching runs for session: {session_id} (resolved to: {resolved_session_id})")
-        return _make_request("/api/v1/runs/query", config, method="POST", json_data=params)
+        runs_from_session: dict = _make_request("/api/v1/runs/query", config, method="POST", json_data=params)
+        print(f"Retrieved the RUNS FROM THE PROVIDED SESSION ID: {runs_from_session}")
+        return runs_from_session
     except Exception as e:
         logger.error(f"An error occurred while getting the runs from the session: {e}")
         raise e
@@ -405,10 +407,8 @@ def list_session_runs_summary(
 
         print(f"Fetching {actual_limit} run summaries for session: {session_id}")
         response = _make_request("/api/v1/runs/query", config, method="POST", json_data=params)
-
         # Extract only lightweight fields from each run
         runs = response.get("runs", []) if isinstance(response, dict) else response
-
         lightweight_runs = []
         for run in runs:
             # Only include essential metadata, not full inputs/outputs
@@ -429,9 +429,9 @@ def list_session_runs_summary(
 
             lightweight_runs.append(summary)
 
-        logger.info(f"Returning {len(lightweight_runs)} lightweight run summaries")
+        print(f"Returning {len(lightweight_runs)} lightweight run summaries")
+        print(f"Provided below are the summaries of the runs for the session below: \n {lightweight_runs}")
         return lightweight_runs
-
     except Exception as e:
         logger.error(f"An error occurred while listing run summaries: {e}")
         raise

@@ -13,22 +13,23 @@ import os
 import sys
 import json
 import yaml
+import uuid
 import logging
 import argparse
-import uuid
 from utils import *
 from constants import *
 from typing import Annotated
 from dotenv import load_dotenv
 from typing_extensions import TypedDict
+from langchain.agents import create_agent
 from typing import Any, Dict, List, Optional
 from langchain_aws import ChatBedrockConverse
-from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.memory import MemorySaver
-from langchain.agents import create_agent
 from langchain_core.prompts import PromptTemplate
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
+from langchain.agents.middleware import SummarizationMiddleware
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 
 
 from agent_tools.langsmith_tools import (
@@ -54,6 +55,26 @@ logger = logging.getLogger(__name__)
 config_data: Dict = load_config(CONFIG_FILE_FPATH)
 logger.info(f"Loaded the configuration file: {json.dumps(config_data, indent=4)}")
 
+# ---------------- SUMMARIZATION CONFIGURATION ----------------
+"""
+Configuration for automatic conversation summarization.
+When the conversation exceeds MAX_TOKENS_BEFORE_SUMMARY, older messages will be
+summarized while keeping MESSAGES_TO_KEEP recent messages intact.
+"""
+MAX_TOKENS_BEFORE_SUMMARY: int = 4000  # Token threshold for triggering summarization
+MESSAGES_TO_KEEP: int = 20  # Number of recent messages to preserve after summarization
+SUMMARY_PREFIX: str = "## Previous Conversation Summary\n"
+
+logger.info(
+    f"Summarization config - Max tokens: {MAX_TOKENS_BEFORE_SUMMARY}, "
+    f"Messages to keep: {MESSAGES_TO_KEEP}"
+)
+
+# ---------------- INITIALIZE THE INSIGHTS AGENT ----------------
+"""
+This agent is responsible for fetching insights about agents from langSmith
+"""
+
 # initialize the insights agent model information
 insights_agent_model_config: Dict = config_data["insights_agent_model_information"]
 # Initialize LLM
@@ -69,6 +90,28 @@ logger.info(f"Initialized the insights agent LLM: {insights_llm}")
 insights_agent_base_prompt: str = load_system_prompt(insights_agent_model_config.get('insights_agent_prompt'))
 logger.info(f"Loaded the insights agent base system prompt")
 
+# ---------------- INITIALIZE SUMMARIZATION MIDDLEWARE ----------------
+"""
+Create a lightweight LLM for conversation summarization.
+Using the same model but could be changed to a more cost-effective model.
+"""
+logger.info("Initializing summarization LLM for middleware...")
+summarization_llm = ChatBedrockConverse(
+    model=insights_agent_model_config["model_id"],
+    temperature=0.3,  # Lower temperature for consistent summaries
+    max_tokens=2000,  # Sufficient for summaries
+)
+
+# Create the summarization middleware
+logger.info("Creating SummarizationMiddleware...")
+conversation_summarization_middleware = SummarizationMiddleware(
+    model=summarization_llm,
+    max_tokens_before_summary=MAX_TOKENS_BEFORE_SUMMARY,
+    messages_to_keep=MESSAGES_TO_KEEP,
+    summary_prefix=SUMMARY_PREFIX,
+)
+logger.info("SummarizationMiddleware created successfully")
+
 # Create tools list
 langsmith_tools = [
     get_session_info,
@@ -77,13 +120,16 @@ langsmith_tools = [
     get_session_insights,
     list_sessions,
 ]
-# Create the insights agent using create_react_agent
-logger.info("Creating insights agent with LangSmith tools...")
+
+# Create the insights agent using create_react_agent with middleware
+logger.info("Creating insights agent with LangSmith tools and conversation summarization middleware...")
 insights_agent = create_agent(
     model=insights_llm,
     tools=langsmith_tools,
-    system_prompt=insights_agent_base_prompt
+    system_prompt=insights_agent_base_prompt,
+    middleware=[conversation_summarization_middleware]
 )
+logger.info(f"Created the insights agent with conversation summarization middleware")
 
 # Initialize in-memory checkpointer for conversation memory
 logger.info("Initializing MemorySaver checkpointer for conversation persistence...")
@@ -91,12 +137,90 @@ memory = MemorySaver()
 logger.info("Memory checkpointer initialized successfully")
 
 class AgentState(TypedDict):
-    """State for the log curator agent with message memory."""
+    """State for the log curator agent with message memory and raw conversation storage."""
     user_question: str
     session_id: Optional[str]
     curated_logs: Dict[str, Any]
     answer: str
     messages: Annotated[List[BaseMessage], add_messages]
+    raw_conversation: List[BaseMessage]  # Store raw conversation before summarization
+    total_tokens: int  # Track token count for summarization threshold
+
+
+def _estimate_tokens(
+    messages: List[BaseMessage]
+) -> int:
+    """
+    Estimate the number of tokens in a list of messages.
+
+    Uses a simple heuristic: ~4 characters per token (approximation).
+    For production use, consider using tiktoken or similar for accurate counting.
+
+    Args:
+        messages: List of messages to count tokens for
+
+    Returns:
+        Estimated token count
+    """
+    total_chars = sum(len(str(msg.content)) for msg in messages)
+    estimated_tokens = total_chars // 4
+    return estimated_tokens
+
+
+def _store_raw_conversation(
+    state: AgentState,
+    new_messages: List[BaseMessage]
+) -> None:
+    """
+    Store raw conversation messages before they're potentially summarized.
+
+    Args:
+        state: Current agent state
+        new_messages: New messages to add to raw conversation
+    """
+    if "raw_conversation" not in state or state["raw_conversation"] is None:
+        state["raw_conversation"] = []
+
+    state["raw_conversation"].extend(new_messages)
+
+    # Update token count
+    state["total_tokens"] = _estimate_tokens(state["raw_conversation"])
+
+    logger.info(
+        f"Stored {len(new_messages)} new messages. "
+        f"Total raw conversation: {len(state['raw_conversation'])} messages, "
+        f"~{state['total_tokens']} tokens"
+    )
+
+
+def _check_and_log_summarization(
+    state: AgentState
+) -> None:
+    """
+    Check if summarization should be triggered and log the status.
+
+    The actual summarization is handled automatically by SummarizationMiddleware
+    when messages are sent to the agent. This function just monitors and logs.
+
+    Args:
+        state: Current agent state
+    """
+    total_tokens = state.get("total_tokens", 0)
+
+    if total_tokens > MAX_TOKENS_BEFORE_SUMMARY:
+        logger.warning(
+            f"Conversation has {total_tokens} tokens, exceeding threshold of "
+            f"{MAX_TOKENS_BEFORE_SUMMARY}. SummarizationMiddleware will "
+            f"automatically summarize older messages, keeping the last "
+            f"{MESSAGES_TO_KEEP} messages."
+        )
+    else:
+        remaining = MAX_TOKENS_BEFORE_SUMMARY - total_tokens
+        logger.info(
+            f"Conversation token count: {total_tokens}/{MAX_TOKENS_BEFORE_SUMMARY} "
+            f"({remaining} tokens until summarization)"
+        )
+
 
 def get_insights(
     state: AgentState
@@ -114,17 +238,22 @@ def get_insights(
 
     logger.info(f"Found {len(existing_messages)} existing messages in conversation history")
 
+    # Check token count and log summarization status
+    _check_and_log_summarization(state)
+
     # Check if there was an error during curation
     if "error" in curated_logs:
         error_msg = f"Unable to answer question: {curated_logs['error']}"
         state["answer"] = error_msg
         # Add error message to conversation history
-        state["messages"] = [HumanMessage(content=user_question), AIMessage(content=error_msg)]
+        new_messages = [HumanMessage(content=user_question), AIMessage(content=error_msg)]
+        state["messages"] = new_messages
+        # Store in raw conversation
+        _store_raw_conversation(state, new_messages)
         return state
 
     try:
         logger.info("In the GET INSIGHTS NODE...")
-
         # Create analysis prompt with context
         analysis_prompt = f"""
         ## User Question:
@@ -133,7 +262,6 @@ def get_insights(
         ## Curated Logs:
         {json.dumps(curated_logs, indent=2, default=str)}
         """
-
         logger.info(f"Constructed the insights agent prompt with {len(analysis_prompt)} characters")
 
         # Prepare messages for the agent: include conversation history + new question
@@ -144,7 +272,6 @@ def get_insights(
 
         # Invoke the insights agent with full conversation context
         response = insights_agent.invoke({"messages": messages_to_send})
-
         # Extract the answer from the response messages
         if "messages" in response and len(response["messages"]) > 0:
             # Get the last message (agent's response)
@@ -154,30 +281,36 @@ def get_insights(
 
             # Add both the user question and agent answer to state messages
             # The add_messages reducer will append these to existing messages
-            state["messages"] = [
+            new_messages = [
                 HumanMessage(content=user_question),
                 AIMessage(content=answer_text)
             ]
+            state["messages"] = new_messages
+            # Store in raw conversation
+            _store_raw_conversation(state, new_messages)
         else:
             answer_text = str(response)
             state["answer"] = answer_text
-            state["messages"] = [
+            new_messages = [
                 HumanMessage(content=user_question),
                 AIMessage(content=answer_text)
             ]
-
+            state["messages"] = new_messages
+            # Store in raw conversation
+            _store_raw_conversation(state, new_messages)
         logger.info("Successfully generated answer and updated conversation history")
-
     except Exception as e:
         logger.error(f"Error generating answer: {e}", exc_info=True)
         error_msg = f"Error generating answer: {str(e)}"
         state["answer"] = error_msg
         # Add error to conversation history
-        state["messages"] = [
+        new_messages = [
             HumanMessage(content=user_question),
             AIMessage(content=error_msg)
         ]
-
+        state["messages"] = new_messages
+        # Store in raw conversation
+        _store_raw_conversation(state, new_messages)
     return state
 
 
@@ -226,6 +359,8 @@ def run_agent(
         "curated_logs": {},
         "answer": "",
         "messages": [],
+        "raw_conversation": [],  # Initialize raw conversation storage
+        "total_tokens": 0,  # Initialize token counter
     }
 
     # Configure thread for memory persistence
