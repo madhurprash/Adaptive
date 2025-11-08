@@ -1,0 +1,19 @@
+general:
+  name: "evolve.ai"
+  description: "This is the configuration file that contains information about the models and infra used by the evolution agent"
+
+# This contains the model information for various agents
+# in our multi agentic system
+insights_agent_model_information:
+  # this is the prompt template that the insights agent uses
+  insights_agent_prompt: prompt_templates/log_curator_base_prompt.txt
+  # Represents the model id that the agent will use within the system
+  # as an deep agent model
+  model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+  # Represents the inference parameters that the foundation model
+  # uses at runtime during inference
+  inference_parameters:
+    temperature: 0.1
+    max_tokens: 2048
+    top_p: 0.92
+    caching: true

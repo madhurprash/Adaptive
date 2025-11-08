@@ -1,0 +1,15 @@
+[project]
+name = "self-healing-agent"
+version = "0.1.0"
+description = "This multi-agent system is responsible for healing and evolving agentic applications overtime"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.40.67",
+    "langchain",
+    "langchain-aws>=1.0.0",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.0",
+    "tavily>=1.1.0",
+    "zmq>=0.0.0",
+]

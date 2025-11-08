@@ -1,0 +1,36 @@
+general:
+  name: "lambda-autotuner"
+  description: "This is an autonomous agent that tunes AWS Lambda function memory settings based on performance metrics."
+
+# This contains the model information for various agents
+# in our multi agentic system
+basic_default_model_information:
+  # Represents the model id that the agent will use within the system
+  # as an deep agent model
+  model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
+  # Represents the inference parameters that the foundation model
+  # uses at runtime during inference
+  inference_parameters:
+    temperature: 0.1
+    max_tokens: 2048
+    top_p: 0.92
+    caching: true
+
+# This is the advanced model that is used in the cases of when the complexity increases
+# and the definition of that complexity is flexible
+advanced_model_information:
+  # Represents the model id that the agent will use within the system
+  # as an deep agent model
+  model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+  # Represents the inference parameters that the foundation model
+  # uses at runtime during inference
+  inference_parameters:
+    temperature: 0.1
+    max_tokens: 2048
+    top_p: 0.92
+    caching: true
+
+agent_prompts:
+  system_prompt_fpath: prompts/lambda_autotuner_agent_system_prompt.txt
+  
+
