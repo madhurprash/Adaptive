@@ -20,6 +20,7 @@ from utils import *
 from constants import *
 from typing import Annotated
 from dotenv import load_dotenv
+from langsmith import traceable
 from typing_extensions import TypedDict
 from langchain.agents import create_agent
 from typing import Any, Dict, List, Optional
@@ -28,9 +29,17 @@ from langgraph.graph.message import add_messages
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
-from langchain.agents.middleware import SummarizationMiddleware
+from langchain.agents.middleware import (
+    SummarizationMiddleware,
+    TodoListMiddleware,
+)
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 
+# Import custom middleware
+from agent_middleware.context_middleware import (
+    TokenLimitCheckMiddleware,
+    tool_response_summarizer,
+)
 
 from agent_tools.langsmith_tools import (
     LangSmithConfig,
@@ -55,20 +64,8 @@ logger = logging.getLogger(__name__)
 config_data: Dict = load_config(CONFIG_FILE_FPATH)
 logger.info(f"Loaded the configuration file: {json.dumps(config_data, indent=4)}")
 
-# ---------------- SUMMARIZATION CONFIGURATION ----------------
-"""
-Configuration for automatic conversation summarization.
-When the conversation exceeds MAX_TOKENS_BEFORE_SUMMARY, older messages will be
-summarized while keeping MESSAGES_TO_KEEP recent messages intact.
-"""
-MAX_TOKENS_BEFORE_SUMMARY: int = 4000  # Token threshold for triggering summarization
-MESSAGES_TO_KEEP: int = 20  # Number of recent messages to preserve after summarization
-SUMMARY_PREFIX: str = "## Previous Conversation Summary\n"
-
-logger.info(
-    f"Summarization config - Max tokens: {MAX_TOKENS_BEFORE_SUMMARY}, "
-    f"Messages to keep: {MESSAGES_TO_KEEP}"
-)
+# initialize the context engineering information
+context_engineering_info: Dict = config_data['context_engineering_info']
 
 # ---------------- INITIALIZE THE INSIGHTS AGENT ----------------
 """
@@ -93,24 +90,100 @@ logger.info(f"Loaded the insights agent base system prompt")
 # ---------------- INITIALIZE SUMMARIZATION MIDDLEWARE ----------------
 """
 Create a lightweight LLM for conversation summarization.
-Using the same model but could be changed to a more cost-effective model.
+Uses configuration from context_engineering_info for optimal summarization.
 """
 logger.info("Initializing summarization LLM for middleware...")
+
+# Get summarization middleware configuration
+summarization_config: Dict = context_engineering_info.get('summarization_middleware')
+logger.info(f"Loaded summarization middleware config:\n{json.dumps(summarization_config, indent=4)}")
+
+# Initialize the summarization LLM with config values
 summarization_llm = ChatBedrockConverse(
-    model=insights_agent_model_config["model_id"],
-    temperature=0.3,  # Lower temperature for consistent summaries
-    max_tokens=2000,  # Sufficient for summaries
+    model=summarization_config.get("model", insights_agent_model_config["model_id"]),
+    temperature=summarization_config.get('temperature', 0.1),  # Lower temperature for consistent summaries
+    max_tokens=summarization_config.get('max_tokens', 2000),  # Sufficient for summaries
+)
+logger.info(f"Initialized summarization LLM with model: {summarization_config.get('model')}")
+
+# Load the custom summarization prompt
+summary_prompt_path: str = summarization_config.get('summary_prompt')
+summary_prompt_text: Optional[str] = None
+
+if summary_prompt_path:
+    try:
+        summary_prompt_text = load_system_prompt(summary_prompt_path)
+        logger.info(f"Loaded custom summarization prompt from: {summary_prompt_path}")
+    except Exception as e:
+        logger.warning(f"Could not load summary prompt from {summary_prompt_path}: {e}. Using default.")
+        summary_prompt_text = None
+else:
+    logger.info("No custom summary prompt configured, using LangChain default")
+
+# Create the summarization middleware with config values
+logger.info("Creating SummarizationMiddleware...")
+middleware_params = {
+    "model": summarization_llm,
+    "max_tokens_before_summary": summarization_config.get("max_tokens_before_summary", 4000),
+    "messages_to_keep": summarization_config.get("messages_to_keep", 20),
+}
+
+# Add custom summary prompt if available
+if summary_prompt_text:
+    middleware_params["summary_prompt"] = summary_prompt_text
+
+conversation_summarization_middleware = SummarizationMiddleware(**middleware_params)
+logger.info(f"SummarizationMiddleware created successfully with max_tokens_before_summary={middleware_params['max_tokens_before_summary']}, messages_to_keep={middleware_params['messages_to_keep']}")
+
+
+# ---------------- INITIALIZE CUSTOM TOKEN LIMIT MIDDLEWARE ----------------
+"""
+Custom middleware to check if input tokens exceed 100k before model calls.
+If exceeded, triggers automatic summarization.
+"""
+logger.info("Creating TokenLimitCheckMiddleware...")
+token_limit_middleware = TokenLimitCheckMiddleware(
+    model=insights_llm,
+    summarization_llm=summarization_llm,
+    token_threshold=config_data['context_engineering_info'].get('token_threshold', 100000),
+    summary_prompt=summary_prompt_text,
+)
+logger.info("TokenLimitCheckMiddleware created successfully")
+
+
+# ---------------- INITIALIZE TOOL RESPONSE SUMMARIZER MIDDLEWARE ----------------
+"""
+Middleware to automatically summarize large tool responses to prevent context overflow.
+Uses the SAME token threshold, summarization LLM, and summarization prompt as TokenLimitCheckMiddleware
+to ensure consistent context management across all components.
+"""
+logger.info("Creating tool_response_summarizer middleware...")
+
+# Use the same token threshold as TokenLimitCheckMiddleware (100k tokens)
+tool_response_token_threshold = config_data['context_engineering_info'].get('token_threshold', 100000)
+
+# Create the tool response summarizer middleware with same config as TokenLimitCheckMiddleware
+tool_summarizer_middleware = tool_response_summarizer(
+    summarization_llm=summarization_llm,
+    token_threshold=tool_response_token_threshold,  # Same 100k threshold
+    store_full_responses=True,  # Store full responses for retrieval if needed
+    summary_prompt=summary_prompt_text,  # Same summarization prompt
+)
+logger.info(
+    f"Tool response summarizer created with:\n"
+    f"  - token_threshold={tool_response_token_threshold} (same as TokenLimitCheckMiddleware)\n"
+    f"  - Using same summarization prompt and LLM"
 )
 
-# Create the summarization middleware
-logger.info("Creating SummarizationMiddleware...")
-conversation_summarization_middleware = SummarizationMiddleware(
-    model=summarization_llm,
-    max_tokens_before_summary=MAX_TOKENS_BEFORE_SUMMARY,
-    messages_to_keep=MESSAGES_TO_KEEP,
-    summary_prefix=SUMMARY_PREFIX,
-)
-logger.info("SummarizationMiddleware created successfully")
+
+# ---------------- INITIALIZE TODO LIST MIDDLEWARE ----------------
+"""
+Todo list middleware to equip the agent with task planning and tracking capabilities.
+"""
+logger.info("Creating TodoListMiddleware...")
+todo_list_middleware = TodoListMiddleware()
+logger.info("TodoListMiddleware created successfully")
+
 
 # Create tools list
 langsmith_tools = [
@@ -122,14 +195,34 @@ langsmith_tools = [
 ]
 
 # Create the insights agent using create_react_agent with middleware
-logger.info("Creating insights agent with LangSmith tools and conversation summarization middleware...")
+# Middleware order matters: they execute in the order listed
+# 1. TokenLimitCheckMiddleware - checks 100k token limit first
+# 2. ToolResponseSummarizer - summarizes large tool outputs
+# 3. TodoListMiddleware - provides task planning and tracking
+# 4. SummarizationMiddleware - handles regular conversation summarization
+logger.info("Creating insights agent with LangSmith tools and middleware stack...")
 insights_agent = create_agent(
     model=insights_llm,
     tools=langsmith_tools,
     system_prompt=insights_agent_base_prompt,
-    middleware=[conversation_summarization_middleware]
+    middleware=[
+        # this middleware is used to check if the messages or the context window exceeds 100k tokens
+        token_limit_middleware,
+        # this middleware summarizes large tool responses to prevent context overflow
+        tool_summarizer_middleware,
+        # this is a to do list middleware
+        todo_list_middleware,
+        # this is the summarization middleware that will be used to summarize the current conversation with the user
+        conversation_summarization_middleware,
+    ]
 )
-logger.info(f"Created the insights agent with conversation summarization middleware")
+logger.info(
+    "Created the insights agent with middleware stack:\n"
+    "  1. TokenLimitCheckMiddleware (100k token threshold)\n"
+    "  2. ToolResponseSummarizer (summarizes large tool outputs)\n"
+    "  3. TodoListMiddleware (task planning)\n"
+    "  4. SummarizationMiddleware (conversation summarization)"
+)
 
 # Initialize in-memory checkpointer for conversation memory
 logger.info("Initializing MemorySaver checkpointer for conversation persistence...")
@@ -137,91 +230,14 @@ memory = MemorySaver()
 logger.info("Memory checkpointer initialized successfully")
 
 class AgentState(TypedDict):
-    """State for the log curator agent with message memory and raw conversation storage."""
+    """State for the log curator agent with message memory."""
     user_question: str
     session_id: Optional[str]
     curated_logs: Dict[str, Any]
     answer: str
     messages: Annotated[List[BaseMessage], add_messages]
-    raw_conversation: List[BaseMessage]  # Store raw conversation before summarization
-    total_tokens: int  # Track token count for summarization threshold
 
-
-def _estimate_tokens(
-    messages: List[BaseMessage]
-) -> int:
-    """
-    Estimate the number of tokens in a list of messages.
-
-    Uses a simple heuristic: ~4 characters per token (approximation).
-    For production use, consider using tiktoken or similar for accurate counting.
-
-    Args:
-        messages: List of messages to count tokens for
-
-    Returns:
-        Estimated token count
-    """
-    total_chars = sum(len(str(msg.content)) for msg in messages)
-    estimated_tokens = total_chars // 4
-    return estimated_tokens
-
-
-def _store_raw_conversation(
-    state: AgentState,
-    new_messages: List[BaseMessage]
-) -> None:
-    """
-    Store raw conversation messages before they're potentially summarized.
-
-    Args:
-        state: Current agent state
-        new_messages: New messages to add to raw conversation
-    """
-    if "raw_conversation" not in state or state["raw_conversation"] is None:
-        state["raw_conversation"] = []
-
-    state["raw_conversation"].extend(new_messages)
-
-    # Update token count
-    state["total_tokens"] = _estimate_tokens(state["raw_conversation"])
-
-    logger.info(
-        f"Stored {len(new_messages)} new messages. "
-        f"Total raw conversation: {len(state['raw_conversation'])} messages, "
-        f"~{state['total_tokens']} tokens"
-    )
-
-
-def _check_and_log_summarization(
-    state: AgentState
-) -> None:
-    """
-    Check if summarization should be triggered and log the status.
-
-    The actual summarization is handled automatically by SummarizationMiddleware
-    when messages are sent to the agent. This function just monitors and logs.
-
-    Args:
-        state: Current agent state
-    """
-    total_tokens = state.get("total_tokens", 0)
-
-    if total_tokens > MAX_TOKENS_BEFORE_SUMMARY:
-        logger.warning(
-            f"Conversation has {total_tokens} tokens, exceeding threshold of "
-            f"{MAX_TOKENS_BEFORE_SUMMARY}. SummarizationMiddleware will "
-            f"automatically summarize older messages, keeping the last "
-            f"{MESSAGES_TO_KEEP} messages."
-        )
-    else:
-        remaining = MAX_TOKENS_BEFORE_SUMMARY - total_tokens
-        logger.info(
-            f"Conversation token count: {total_tokens}/{MAX_TOKENS_BEFORE_SUMMARY} "
-            f"({remaining} tokens until summarization)"
-        )
-
-
+@traceable
 def get_insights(
     state: AgentState
 ) -> AgentState:
@@ -238,9 +254,6 @@ def get_insights(
 
     logger.info(f"Found {len(existing_messages)} existing messages in conversation history")
 
-    # Check token count and log summarization status
-    _check_and_log_summarization(state)
-
     # Check if there was an error during curation
     if "error" in curated_logs:
         error_msg = f"Unable to answer question: {curated_logs['error']}"
@@ -248,8 +261,6 @@ def get_insights(
         # Add error message to conversation history
         new_messages = [HumanMessage(content=user_question), AIMessage(content=error_msg)]
         state["messages"] = new_messages
-        # Store in raw conversation
-        _store_raw_conversation(state, new_messages)
         return state
 
     try:
@@ -268,10 +279,36 @@ def get_insights(
         messages_to_send = list(existing_messages)  # Copy existing messages
         messages_to_send.append(HumanMessage(content=analysis_prompt))
 
+        # Count tokens before sending
+        try:
+            input_token_count = insights_llm.get_num_tokens_from_messages(messages_to_send)
+            logger.info(f"Input token count: {input_token_count}")
+        except Exception as e:
+            logger.warning(f"Could not count input tokens: {e}")
+            input_token_count = None
+
         logger.info(f"Sending {len(messages_to_send)} messages to insights agent (including history)")
 
         # Invoke the insights agent with full conversation context
         response = insights_agent.invoke({"messages": messages_to_send})
+
+        # Log token usage from response
+        if "messages" in response and len(response["messages"]) > 0:
+            last_message = response["messages"][-1]
+            if hasattr(last_message, 'usage_metadata') and last_message.usage_metadata:
+                usage = last_message.usage_metadata
+                logger.info(f"Token usage - Input: {usage.get('input_tokens', 'N/A')}, "
+                          f"Output: {usage.get('output_tokens', 'N/A')}, "
+                          f"Total: {usage.get('total_tokens', 'N/A')}")
+            elif hasattr(last_message, 'response_metadata') and last_message.response_metadata:
+                # Alternative location for token usage
+                metadata = last_message.response_metadata
+                if 'usage' in metadata:
+                    usage = metadata['usage']
+                    logger.info(f"Token usage from metadata - Input: {usage.get('input_tokens', 'N/A')}, "
+                              f"Output: {usage.get('output_tokens', 'N/A')}, "
+                              f"Total: {usage.get('total_tokens', 'N/A')}")
+
         # Extract the answer from the response messages
         if "messages" in response and len(response["messages"]) > 0:
             # Get the last message (agent's response)
@@ -286,8 +323,6 @@ def get_insights(
                 AIMessage(content=answer_text)
             ]
             state["messages"] = new_messages
-            # Store in raw conversation
-            _store_raw_conversation(state, new_messages)
         else:
             answer_text = str(response)
             state["answer"] = answer_text
@@ -296,8 +331,6 @@ def get_insights(
                 AIMessage(content=answer_text)
             ]
             state["messages"] = new_messages
-            # Store in raw conversation
-            _store_raw_conversation(state, new_messages)
         logger.info("Successfully generated answer and updated conversation history")
     except Exception as e:
         logger.error(f"Error generating answer: {e}", exc_info=True)
@@ -309,8 +342,6 @@ def get_insights(
             AIMessage(content=error_msg)
         ]
         state["messages"] = new_messages
-        # Store in raw conversation
-        _store_raw_conversation(state, new_messages)
     return state
 
 
@@ -359,8 +390,6 @@ def run_agent(
         "curated_logs": {},
         "answer": "",
         "messages": [],
-        "raw_conversation": [],  # Initialize raw conversation storage
-        "total_tokens": 0,  # Initialize token counter
     }
 
     # Configure thread for memory persistence

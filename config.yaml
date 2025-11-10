@@ -17,3 +17,32 @@ insights_agent_model_information:
     max_tokens: 2048
     top_p: 0.92
     caching: true
+
+# This section contains information used by the main
+# agent to implement efficient context engineering of
+# model context and tool results
+context_engineering_info:
+  # Summarization middleware information
+  # this is to automatically summarize conversation
+  # history when approaching token limits
+  summarization_middleware: 
+    # this is the model that will be used as a summarization
+    # model
+    model: us.anthropic.claude-3-5-haiku-20241022-v1:0
+    # these ate the number of messages to keep after the summarization
+    messages_to_keep: 20
+    # temperature used for the summarization middleware
+    temperature: 0.1
+    # this is the token threshold at which the summarization is instantiated
+    max_tokens_before_summary: 4000
+    # max tokens
+    max_tokens: 2000
+    # This is the path to the summarization prompt
+    summary_prompt: prompt_templates/context_engineering/langsmith/summarization_base_prompt.txt
+    summary_prefix: "Previous conversation summary"
+
+  # Token threshold for context management
+  # Used by both TokenLimitCheckMiddleware and ToolResponseSummarizer
+  # to ensure consistent behavior across all context management components
+  # When messages or tool responses exceed this threshold, they are summarized
+  token_threshold: 100000  # 100k tokens

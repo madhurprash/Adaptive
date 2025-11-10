@@ -11,5 +11,6 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "requests>=2.32.0",
     "tavily>=1.1.0",
+    "transformers>=4.30.0",
     "zmq>=0.0.0",
 ]
