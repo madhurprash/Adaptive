@@ -173,7 +173,20 @@ def get_session_info(
 
         params = {"include_stats": str(include_stats).lower()}
         print(f"Fetching info for session: {session_id} (resolved to: {resolved_session_id})")
-        return _make_request(f"/api/v1/sessions/{resolved_session_id}", config, params=params)
+
+        try:
+            return _make_request(f"/api/v1/sessions/{resolved_session_id}", config, params=params)
+        except requests.exceptions.HTTPError as e:
+            # If we get a 500 error with include_stats=true, retry without stats
+            if e.response.status_code == 500 and include_stats:
+                logger.warning(
+                    f"Failed to get session info with stats (500 error), retrying without stats. "
+                    f"Session: {session_id}"
+                )
+                params = {"include_stats": "false"}
+                return _make_request(f"/api/v1/sessions/{resolved_session_id}", config, params=params)
+            else:
+                raise
     except Exception as e:
         logger.error(f"An error occurred while retrieving the information about the session or project: {e}")
         raise
@@ -490,6 +503,249 @@ def get_run_details(
 
     except Exception as e:
         logger.error(f"An error occurred while getting run details: {e}")
+        raise
+
+
+@tool
+def get_latest_run(
+    session_id: str,
+    config: Optional[LangSmithConfig] = None,
+    include_details: bool = False,
+) -> dict[str, Any]:
+    """
+    Get the most recent run from a session (lightweight by default).
+
+    This tool fetches ONLY the latest run, avoiding context window overflow.
+    By default returns lightweight summary, set include_details=True for full data.
+
+    Args:
+        session_id: UUID or name of the LangSmith session
+        config: LangSmith configuration (uses env vars if not provided)
+        include_details: If True, fetches full run details including inputs/outputs
+
+    Returns:
+        Dictionary containing the latest run:
+        - id: Run UUID
+        - name: Run name/type
+        - status: Run status (success, error, etc.)
+        - start_time: Execution start timestamp
+        - end_time: Execution end timestamp
+        - latency: Execution duration in milliseconds
+        - error: Error message (if present and include_details=False, truncated to 500 chars)
+        - Full details if include_details=True
+
+    Example:
+        >>> config = LangSmithConfig.from_env()
+        >>> latest = get_latest_run("my-agent-project", config)
+        >>> print(f"Latest run status: {latest['status']}")
+        >>> if latest.get('error'):
+        ...     print(f"Error: {latest['error']}")
+    """
+    try:
+        print(f"Fetching latest run from session: {session_id}")
+        if config is None:
+            config = LangSmithConfig.from_env()
+
+        # Resolve the session name to UUID if needed
+        resolved_session_id = _resolve_session_id(session_id, config)
+
+        # Query for just 1 run, sorted by start_time descending
+        params = {
+            "session": [resolved_session_id],
+            "limit": 1,
+            "offset": 0,
+        }
+
+        response = _make_request("/api/v1/runs/query", config, method="POST", json_data=params)
+        runs = response.get("runs", []) if isinstance(response, dict) else response
+
+        if not runs:
+            logger.warning(f"No runs found in session {session_id}")
+            return {"error": "No runs found in this session"}
+
+        latest_run = runs[0]
+
+        if include_details:
+            # Return full details
+            logger.info(f"Returning full details for latest run {latest_run['id']}")
+            return latest_run
+        else:
+            # Return lightweight summary
+            summary = {
+                "id": latest_run.get("id"),
+                "name": latest_run.get("name"),
+                "status": latest_run.get("status"),
+                "start_time": latest_run.get("start_time"),
+                "end_time": latest_run.get("end_time"),
+                "latency": latest_run.get("latency"),
+                "run_type": latest_run.get("run_type"),
+            }
+
+            # Include error message but truncate it
+            if latest_run.get("error"):
+                error_msg = str(latest_run.get("error"))
+                summary["error"] = error_msg[:500] + "..." if len(error_msg) > 500 else error_msg
+
+            logger.info(f"Returning lightweight summary for latest run {latest_run['id']}")
+            return summary
+
+    except Exception as e:
+        logger.error(f"An error occurred while getting latest run: {e}")
+        raise
+
+
+@tool
+def get_latest_error_run(
+    session_id: str,
+    config: Optional[LangSmithConfig] = None,
+    include_full_trace: bool = False,
+) -> dict[str, Any]:
+    """
+    Get the most recent FAILED run from a session.
+
+    This tool specifically filters for error runs and returns the latest one,
+    perfect for debugging the most recent failure without loading all runs.
+
+    Args:
+        session_id: UUID or name of the LangSmith session
+        config: LangSmith configuration (uses env vars if not provided)
+        include_full_trace: If True, includes full error trace; else truncates to 1000 chars
+
+    Returns:
+        Dictionary containing the latest error run:
+        - id: Run UUID
+        - name: Run name/type
+        - status: Run status (will be "error")
+        - start_time: Execution start timestamp
+        - end_time: Execution end timestamp
+        - error: Error message and trace
+        - inputs: Input data that caused the error
+        - run_type: Type of run
+
+    Example:
+        >>> config = LangSmithConfig.from_env()
+        >>> latest_error = get_latest_error_run("my-agent-project", config)
+        >>> print(f"Latest error: {latest_error['error']}")
+        >>> print(f"Inputs that caused it: {latest_error['inputs']}")
+    """
+    try:
+        print(f"Fetching latest ERROR run from session: {session_id}")
+        if config is None:
+            config = LangSmithConfig.from_env()
+
+        # Resolve the session name to UUID if needed
+        resolved_session_id = _resolve_session_id(session_id, config)
+
+        # Query for just 1 error run, sorted by start_time descending
+        params = {
+            "session": [resolved_session_id],
+            "limit": 1,
+            "offset": 0,
+            "filter": 'eq(status, "error")',
+        }
+
+        response = _make_request("/api/v1/runs/query", config, method="POST", json_data=params)
+        runs = response.get("runs", []) if isinstance(response, dict) else response
+
+        if not runs:
+            logger.warning(f"No error runs found in session {session_id}")
+            return {"message": "No failed runs found in this session"}
+
+        latest_error = runs[0]
+
+        # Extract relevant error information
+        error_summary = {
+            "id": latest_error.get("id"),
+            "name": latest_error.get("name"),
+            "status": latest_error.get("status"),
+            "start_time": latest_error.get("start_time"),
+            "end_time": latest_error.get("end_time"),
+            "run_type": latest_error.get("run_type"),
+            "inputs": latest_error.get("inputs"),  # Include inputs to see what caused the error
+        }
+
+        # Handle error message
+        if latest_error.get("error"):
+            error_msg = str(latest_error.get("error"))
+            if include_full_trace:
+                error_summary["error"] = error_msg
+            else:
+                # Truncate to 1000 chars for readability
+                error_summary["error"] = error_msg[:1000] + "..." if len(error_msg) > 1000 else error_msg
+
+        logger.info(f"Returning error info for latest failed run {latest_error['id']}")
+        return error_summary
+
+    except Exception as e:
+        logger.error(f"An error occurred while getting latest error run: {e}")
+        raise
+
+
+@tool
+def get_run_error_only(
+    run_id: str,
+    config: Optional[LangSmithConfig] = None,
+    include_full_trace: bool = True,
+) -> dict[str, Any]:
+    """
+    Get ONLY the error information from a specific run.
+
+    This tool fetches a run but returns only error-relevant fields,
+    avoiding large context from inputs/outputs. Perfect for error analysis.
+
+    Args:
+        run_id: UUID of the specific run
+        config: LangSmith configuration (uses env vars if not provided)
+        include_full_trace: If True, returns full error trace; else truncates to 2000 chars
+
+    Returns:
+        Dictionary containing error information:
+        - id: Run UUID
+        - name: Run name/type
+        - status: Run status
+        - error: Full or truncated error message
+        - start_time: When the run started
+        - end_time: When the run ended
+        - run_type: Type of run
+
+    Example:
+        >>> config = LangSmithConfig.from_env()
+        >>> error_info = get_run_error_only("run-uuid-here", config)
+        >>> print(f"Error details: {error_info['error']}")
+    """
+    try:
+        print(f"Fetching ONLY error info for run: {run_id}")
+        if config is None:
+            config = LangSmithConfig.from_env()
+
+        # Fetch the specific run by ID
+        full_run = _make_request(f"/api/v1/runs/{run_id}", config)
+
+        # Extract only error-relevant fields
+        error_info = {
+            "id": full_run.get("id"),
+            "name": full_run.get("name"),
+            "status": full_run.get("status"),
+            "start_time": full_run.get("start_time"),
+            "end_time": full_run.get("end_time"),
+            "run_type": full_run.get("run_type"),
+        }
+
+        # Handle error message
+        if full_run.get("error"):
+            error_msg = str(full_run.get("error"))
+            if include_full_trace:
+                error_info["error"] = error_msg
+            else:
+                error_info["error"] = error_msg[:2000] + "..." if len(error_msg) > 2000 else error_msg
+        else:
+            error_info["error"] = "No error found in this run"
+
+        logger.info(f"Returning error-only info for run {run_id}")
+        return error_info
+
+    except Exception as e:
+        logger.error(f"An error occurred while getting error info for run: {e}")
         raise
 
 

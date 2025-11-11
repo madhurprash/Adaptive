@@ -1,0 +1,279 @@
+{
+  "metadata": {
+    "agent_name": "lambda-autotuner",
+    "description": "Synthetic dataset of questions for testing the Lambda Auto-Tuner Agent",
+    "version": "1.0",
+    "total_questions": 30
+  },
+  "questions": [
+    {
+      "id": 1,
+      "category": "basic_listing",
+      "question": "Can you list all the Lambda functions in my AWS account?",
+      "expected_tools": ["list_lambda_functions"],
+      "difficulty": "easy",
+      "tags": ["listing", "discovery"]
+    },
+    {
+      "id": 2,
+      "category": "basic_listing",
+      "question": "Show me the first 10 Lambda functions and their memory configurations",
+      "expected_tools": ["list_lambda_functions"],
+      "difficulty": "easy",
+      "tags": ["listing", "configuration"]
+    },
+    {
+      "id": 3,
+      "category": "configuration_query",
+      "question": "What is the current configuration of my-lambda-function?",
+      "expected_tools": ["get_lambda_configuration"],
+      "difficulty": "easy",
+      "tags": ["configuration", "single_function"],
+      "notes": "Replace 'my-lambda-function' with actual function name"
+    },
+    {
+      "id": 4,
+      "category": "performance_analysis",
+      "question": "Can you fetch the performance metrics for my-lambda-function over the last 30 minutes?",
+      "expected_tools": ["fetch_lambda_metrics"],
+      "difficulty": "easy",
+      "tags": ["metrics", "performance"],
+      "notes": "Replace 'my-lambda-function' with actual function name"
+    },
+    {
+      "id": 5,
+      "category": "performance_analysis",
+      "question": "Check the error rate and duration metrics for my-lambda-function in the past hour",
+      "expected_tools": ["fetch_lambda_metrics"],
+      "difficulty": "easy",
+      "tags": ["metrics", "errors", "duration"]
+    },
+    {
+      "id": 6,
+      "category": "full_analysis",
+      "question": "Analyze the performance of my-lambda-function and tell me if it needs optimization",
+      "expected_tools": ["get_lambda_configuration", "fetch_lambda_metrics", "analyze_metrics"],
+      "difficulty": "medium",
+      "tags": ["analysis", "optimization", "multi_step"]
+    },
+    {
+      "id": 7,
+      "category": "full_optimization",
+      "question": "Can you optimize the memory settings for my-lambda-function based on its current performance?",
+      "expected_tools": ["get_lambda_configuration", "fetch_lambda_metrics", "analyze_metrics", "decide_action"],
+      "difficulty": "medium",
+      "tags": ["optimization", "memory", "multi_step"]
+    },
+    {
+      "id": 8,
+      "category": "full_optimization",
+      "question": "My function my-lambda-function is running slow. Can you check its metrics and suggest improvements?",
+      "expected_tools": ["get_lambda_configuration", "fetch_lambda_metrics", "analyze_metrics", "decide_action"],
+      "difficulty": "medium",
+      "tags": ["troubleshooting", "performance", "optimization"]
+    },
+    {
+      "id": 9,
+      "category": "troubleshooting",
+      "question": "Why is my-lambda-function experiencing throttles? What should I do?",
+      "expected_tools": ["fetch_lambda_metrics", "get_lambda_configuration", "analyze_metrics"],
+      "difficulty": "medium",
+      "tags": ["throttling", "troubleshooting"]
+    },
+    {
+      "id": 10,
+      "category": "troubleshooting",
+      "question": "My-lambda-function has a high error rate. Can you investigate and suggest a fix?",
+      "expected_tools": ["fetch_lambda_metrics", "analyze_metrics", "decide_action"],
+      "difficulty": "medium",
+      "tags": ["errors", "troubleshooting", "optimization"]
+    },
+    {
+      "id": 11,
+      "category": "cost_optimization",
+      "question": "Are any of my Lambda functions over-provisioned? I want to reduce costs.",
+      "expected_tools": ["list_lambda_functions", "fetch_lambda_metrics", "analyze_metrics"],
+      "difficulty": "hard",
+      "tags": ["cost", "optimization", "multi_function"]
+    },
+    {
+      "id": 12,
+      "category": "cost_optimization",
+      "question": "Check if my-lambda-function is using only a small portion of its timeout budget and can be downsized",
+      "expected_tools": ["get_lambda_configuration", "fetch_lambda_metrics", "analyze_metrics"],
+      "difficulty": "medium",
+      "tags": ["cost", "duration", "optimization"]
+    },
+    {
+      "id": 13,
+      "category": "action_application",
+      "question": "Apply the recommended memory optimization for my-lambda-function (dry run first)",
+      "expected_tools": ["get_lambda_configuration", "fetch_lambda_metrics", "analyze_metrics", "decide_action", "apply_action"],
+      "difficulty": "hard",
+      "tags": ["apply", "optimization", "dry_run"]
+    },
+    {
+      "id": 14,
+      "category": "action_application",
+      "question": "Increase the memory for my-lambda-function to improve its performance",
+      "expected_tools": ["get_lambda_configuration", "decide_action", "apply_action"],
+      "difficulty": "medium",
+      "tags": ["apply", "memory", "increase"]
+    },
+    {
+      "id": 15,
+      "category": "cloudwatch_logs",
+      "question": "Show me the recent CloudWatch logs for Lambda functions",
+      "expected_tools": ["fetch_cloudwatch_logs_for_service"],
+      "difficulty": "easy",
+      "tags": ["cloudwatch", "logs", "monitoring"]
+    },
+    {
+      "id": 16,
+      "category": "cloudwatch_logs",
+      "question": "Analyze the log group for my-lambda-function and check for errors",
+      "expected_tools": ["analyze_log_group"],
+      "difficulty": "medium",
+      "tags": ["cloudwatch", "logs", "errors", "analysis"]
+    },
+    {
+      "id": 17,
+      "category": "cloudwatch_alarms",
+      "question": "Are there any CloudWatch alarms triggered for Lambda functions?",
+      "expected_tools": ["get_cloudwatch_alarms_for_service"],
+      "difficulty": "easy",
+      "tags": ["cloudwatch", "alarms", "monitoring"]
+    },
+    {
+      "id": 18,
+      "category": "cloudwatch_dashboards",
+      "question": "List all CloudWatch dashboards in my account",
+      "expected_tools": ["list_cloudwatch_dashboards"],
+      "difficulty": "easy",
+      "tags": ["cloudwatch", "dashboards", "monitoring"]
+    },
+    {
+      "id": 19,
+      "category": "research",
+      "question": "What are the best practices for optimizing Lambda function memory settings?",
+      "expected_tools": ["internet_search"],
+      "difficulty": "easy",
+      "tags": ["research", "best_practices", "optimization"]
+    },
+    {
+      "id": 20,
+      "category": "research",
+      "question": "Search for strategies to reduce Lambda cold start times",
+      "expected_tools": ["internet_search"],
+      "difficulty": "easy",
+      "tags": ["research", "cold_start", "optimization"]
+    },
+    {
+      "id": 21,
+      "category": "complex_scenario",
+      "question": "I have a Lambda function that's timing out frequently. Can you diagnose the issue, check metrics, and recommend a solution?",
+      "expected_tools": ["get_lambda_configuration", "fetch_lambda_metrics", "analyze_metrics", "decide_action", "internet_search"],
+      "difficulty": "hard",
+      "tags": ["troubleshooting", "timeout", "multi_step", "complex"]
+    },
+    {
+      "id": 22,
+      "category": "complex_scenario",
+      "question": "Audit all my Lambda functions and create a report showing which ones need optimization",
+      "expected_tools": ["list_lambda_functions", "fetch_lambda_metrics", "analyze_metrics"],
+      "difficulty": "hard",
+      "tags": ["audit", "report", "multi_function", "complex"]
+    },
+    {
+      "id": 23,
+      "category": "comparison",
+      "question": "Compare the performance metrics of function-a and function-b",
+      "expected_tools": ["fetch_lambda_metrics", "get_lambda_configuration"],
+      "difficulty": "medium",
+      "tags": ["comparison", "metrics", "multi_function"]
+    },
+    {
+      "id": 24,
+      "category": "threshold_analysis",
+      "question": "Check if any functions have error rates above 1%",
+      "expected_tools": ["list_lambda_functions", "fetch_lambda_metrics", "analyze_metrics"],
+      "difficulty": "medium",
+      "tags": ["errors", "threshold", "analysis"]
+    },
+    {
+      "id": 25,
+      "category": "threshold_analysis",
+      "question": "Find Lambda functions that are using more than 70% of their timeout budget",
+      "expected_tools": ["list_lambda_functions", "get_lambda_configuration", "fetch_lambda_metrics", "analyze_metrics"],
+      "difficulty": "hard",
+      "tags": ["timeout", "threshold", "analysis", "multi_function"]
+    },
+    {
+      "id": 26,
+      "category": "edge_cases",
+      "question": "My function is already at 10GB memory but still slow. What should I do?",
+      "expected_tools": ["get_lambda_configuration", "fetch_lambda_metrics", "analyze_metrics", "internet_search"],
+      "difficulty": "hard",
+      "tags": ["edge_case", "max_memory", "troubleshooting"]
+    },
+    {
+      "id": 27,
+      "category": "edge_cases",
+      "question": "Can you reduce memory for a function that's at 128MB minimum?",
+      "expected_tools": ["get_lambda_configuration", "decide_action"],
+      "difficulty": "easy",
+      "tags": ["edge_case", "min_memory"]
+    },
+    {
+      "id": 28,
+      "category": "historical_analysis",
+      "question": "Show me performance trends for my-lambda-function over the last 2 hours",
+      "expected_tools": ["fetch_lambda_metrics"],
+      "difficulty": "medium",
+      "tags": ["metrics", "historical", "trends"]
+    },
+    {
+      "id": 29,
+      "category": "multi_metric_analysis",
+      "question": "Give me a complete health check for my-lambda-function including errors, throttles, duration, and recommendations",
+      "expected_tools": ["get_lambda_configuration", "fetch_lambda_metrics", "analyze_metrics", "decide_action"],
+      "difficulty": "medium",
+      "tags": ["health_check", "comprehensive", "multi_metric"]
+    },
+    {
+      "id": 30,
+      "category": "proactive_optimization",
+      "question": "I'm launching a new feature tomorrow that will increase traffic. Help me prepare my Lambda functions",
+      "expected_tools": ["list_lambda_functions", "fetch_lambda_metrics", "analyze_metrics", "internet_search"],
+      "difficulty": "hard",
+      "tags": ["proactive", "capacity_planning", "optimization"]
+    }
+  ],
+  "usage_notes": {
+    "placeholder_functions": "Replace 'my-lambda-function', 'function-a', and 'function-b' with actual function names from your AWS account",
+    "testing_approach": "Start with easy questions to validate basic functionality, then move to medium and hard questions",
+    "expected_behavior": "The agent should use appropriate tools in sequence and provide actionable recommendations",
+    "dry_run_default": "The agent should default to dry_run=True for apply_action unless explicitly told to apply changes"
+  },
+  "categories": {
+    "basic_listing": "Questions about discovering and listing Lambda functions",
+    "configuration_query": "Questions about Lambda function configuration",
+    "performance_analysis": "Questions about analyzing performance metrics",
+    "full_analysis": "Questions requiring complete analysis workflow",
+    "full_optimization": "Questions requiring analysis and optimization recommendations",
+    "troubleshooting": "Questions about diagnosing and fixing issues",
+    "cost_optimization": "Questions about reducing costs",
+    "action_application": "Questions about applying configuration changes",
+    "cloudwatch_logs": "Questions about CloudWatch logs",
+    "cloudwatch_alarms": "Questions about CloudWatch alarms",
+    "cloudwatch_dashboards": "Questions about CloudWatch dashboards",
+    "research": "Questions requiring internet research",
+    "complex_scenario": "Multi-step complex scenarios",
+    "comparison": "Questions comparing multiple functions",
+    "threshold_analysis": "Questions about threshold-based analysis",
+    "edge_cases": "Questions testing edge cases and limits",
+    "historical_analysis": "Questions about historical metrics",
+    "multi_metric_analysis": "Questions requiring multiple metrics",
+    "proactive_optimization": "Questions about proactive optimization and planning"
+  }
+}

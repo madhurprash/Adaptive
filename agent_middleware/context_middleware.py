@@ -84,7 +84,7 @@ class TokenLimitCheckMiddleware(AgentMiddleware):
 
             # Get summary from LLM
             summary_response = self.summarization_llm.invoke([
-                SystemMessage(content="You are a helpful assistant that creates concise summaries."),
+                SystemMessage(content="You are a helpful assistant that creates summaries."),
                 HumanMessage(content=summary_request)
             ])
 
@@ -163,6 +163,7 @@ def create_tool_response_summarizer(
     token_threshold: int = 100000,
     store_full_responses: bool = True,
     summary_prompt: Optional[str] = None,
+    summarization_model_max_tokens: int = 150000,
 ):
     """
     Create a tool response summarization middleware using wrap_tool_call.
@@ -175,6 +176,7 @@ def create_tool_response_summarizer(
         token_threshold: Maximum allowed response tokens before summarization (default: 100k)
         store_full_responses: Whether to store full responses
         summary_prompt: Optional custom summarization prompt (same as TokenLimitCheckMiddleware)
+        summarization_model_max_tokens: Max tokens the summarization model can handle (default: 150k)
 
     Returns:
         Middleware that summarizes large tool responses
@@ -182,52 +184,166 @@ def create_tool_response_summarizer(
     logger.info(
         f"Creating tool_response_summarizer with "
         f"token_threshold={token_threshold}, "
-        f"store_full_responses={store_full_responses}"
+        f"store_full_responses={store_full_responses}, "
+        f"summarization_model_max_tokens={summarization_model_max_tokens}"
     )
+
+    def _chunk_content(content: str, max_chunk_tokens: int) -> List[str]:
+        """
+        Split content into chunks that fit within the summarization model's token limit.
+        Uses actual token counting to ensure chunks don't exceed the limit.
+
+        Args:
+            content: The content to chunk
+            max_chunk_tokens: Maximum tokens per chunk
+
+        Returns:
+            List of content chunks
+        """
+        chunks = []
+
+        # Start with character-based estimate for initial chunk size
+        # We'll refine this as we go
+        chars_per_token = 4  # Initial estimate
+
+        current_pos = 0
+        content_length = len(content)
+
+        while current_pos < content_length:
+            # Estimate chunk size based on current chars_per_token ratio
+            estimated_chunk_size = int(max_chunk_tokens * chars_per_token)
+            end_pos = min(current_pos + estimated_chunk_size, content_length)
+
+            chunk = content[current_pos:end_pos]
+
+            # Check actual token count
+            chunk_tokens = summarization_llm.get_num_tokens(chunk)
+
+            # If chunk is too large, reduce it
+            while chunk_tokens > max_chunk_tokens and len(chunk) > 100:
+                # Reduce chunk size by 10%
+                end_pos = current_pos + int(len(chunk) * 0.9)
+                chunk = content[current_pos:end_pos]
+                chunk_tokens = summarization_llm.get_num_tokens(chunk)
+
+            # Update our estimate of chars per token for next iteration
+            if chunk_tokens > 0:
+                chars_per_token = len(chunk) / chunk_tokens
+
+            chunks.append(chunk)
+            current_pos = end_pos
+            logger.info(f"Created chunk {len(chunks)} with {chunk_tokens} tokens ({len(chunk)} chars)")
+
+        logger.info(f"Split content into {len(chunks)} chunks (max {max_chunk_tokens} tokens each)")
+        return chunks
 
     def _summarize_tool_content(tool_name: str, content: str) -> str:
         """
         Summarize tool response content using LLM.
         Uses the same summarization prompt as TokenLimitCheckMiddleware for consistency.
+        If content is too large for the summarization model, chunks it and summarizes each chunk.
         """
         logger.info(f"Summarizing response from tool '{tool_name}' (length: {len(content)} chars)")
 
         try:
-            # Create summarization prompt - use custom prompt if provided, otherwise use default
-            if summary_prompt:
-                # Use the same prompt format as TokenLimitCheckMiddleware
-                summary_request = (
-                    f"{summary_prompt}\n\n"
-                    f"Tool Name: {tool_name}\n\n"
-                    f"Tool Response:\n{content}"
+            # Check actual token count of the content
+            content_tokens = summarization_llm.get_num_tokens(content)
+            logger.info(f"Content has {content_tokens} tokens")
+
+            # If content is too large for summarization model, chunk it first
+            # Leave room for prompt overhead (~2000 tokens)
+            if content_tokens > (summarization_model_max_tokens - 2000):
+                logger.warning(
+                    f"Content too large for summarization model ({content_tokens} tokens > "
+                    f"{summarization_model_max_tokens - 2000} tokens). Using chunked summarization."
                 )
+
+                # Chunk the content - reserve tokens for prompt overhead
+                max_chunk_tokens = summarization_model_max_tokens - 2000
+                chunks = _chunk_content(content, max_chunk_tokens)
+
+                # Summarize each chunk
+                chunk_summaries = []
+                for i, chunk in enumerate(chunks):
+                    logger.info(f"Summarizing chunk {i+1}/{len(chunks)} for tool '{tool_name}'")
+
+                    # Create summarization prompt for this chunk
+                    if summary_prompt:
+                        summary_request = (
+                            f"{summary_prompt}\n\n"
+                            f"Tool Name: {tool_name}\n"
+                            f"Chunk {i+1} of {len(chunks)}\n\n"
+                            f"Tool Response:\n{chunk}"
+                        )
+                    else:
+                        summary_request = (
+                            f"Please provide a concise summary of the following chunk (part {i+1} of {len(chunks)}) "
+                            f"from tool '{tool_name}', preserving key information and important details. "
+                            f"If it's structured data (JSON, lists), maintain the structure and include counts/statistics.\n\n"
+                            f"Tool Response:\n{chunk}"
+                        )
+
+                    # Get summary for this chunk
+                    response = summarization_llm.invoke([
+                        SystemMessage(content="You are a helpful assistant that creates concise summaries."),
+                        HumanMessage(content=summary_request)
+                    ])
+
+                    chunk_summaries.append(f"[Chunk {i+1}/{len(chunks)}]\n{response.content}")
+
+                # Combine all chunk summaries
+                combined_summary = "\n\n".join(chunk_summaries)
+                logger.info(
+                    f"Successfully summarized {len(chunks)} chunks. "
+                    f"Combined summary length: {len(combined_summary)} chars"
+                )
+
+                # Add metadata
+                summary_with_metadata = (
+                    f"[CHUNKED SUMMARIZED TOOL RESPONSE FROM: {tool_name}]\n"
+                    f"[Original: {content_tokens} tokens, Split into {len(chunks)} chunks]\n"
+                    f"[Summarized to: {len(combined_summary)} chars]\n\n"
+                    f"{combined_summary}\n\n"
+                    f"[Note: Full response has been stored and is available if needed]"
+                )
+                print(f"Returning the chunked tool call summary")
+                return summary_with_metadata
+
             else:
-                # Default prompt similar to TokenLimitCheckMiddleware
-                summary_request = (
-                    f"Please provide a concise summary of the following tool response from '{tool_name}', "
-                    f"preserving key information, context, and important details. "
-                    f"If it's structured data (JSON, lists), maintain the structure and include counts/statistics.\n\n"
-                    f"Tool Response:\n{content}"
+                # Content is small enough - summarize directly
+                # Create summarization prompt - use custom prompt if provided, otherwise use default
+                if summary_prompt:
+                    summary_request = (
+                        f"{summary_prompt}\n\n"
+                        f"Tool Name: {tool_name}\n\n"
+                        f"Tool Response:\n{content}"
+                    )
+                else:
+                    summary_request = (
+                        f"Please provide a concise summary of the following tool response from '{tool_name}', "
+                        f"preserving key information, context, and important details. "
+                        f"If it's structured data (JSON, lists), maintain the structure and include counts/statistics.\n\n"
+                        f"Tool Response:\n{content}"
+                    )
+
+                # Get summary from LLM using the same approach as TokenLimitCheckMiddleware
+                response = summarization_llm.invoke([
+                    SystemMessage(content="You are a helpful assistant that creates concise summaries."),
+                    HumanMessage(content=summary_request)
+                ])
+
+                summary = response.content
+                logger.info(f"Successfully summarized tool response. Summary length: {len(summary)} chars")
+
+                # Add metadata to summary
+                summary_with_metadata = (
+                    f"[SUMMARIZED TOOL RESPONSE FROM: {tool_name}]\n"
+                    f"[Original: {content_tokens} tokens, Summarized to: {len(summary)} chars]\n\n"
+                    f"{summary}\n\n"
+                    f"[Note: Full response has been stored and is available if needed]"
                 )
-
-            # Get summary from LLM using the same approach as TokenLimitCheckMiddleware
-            response = summarization_llm.invoke([
-                SystemMessage(content="You are a helpful assistant that creates concise summaries."),
-                HumanMessage(content=summary_request)
-            ])
-
-            summary = response.content
-            logger.info(f"Successfully summarized tool response. Summary length: {len(summary)} chars")
-
-            # Add metadata to summary
-            summary_with_metadata = (
-                f"[SUMMARIZED TOOL RESPONSE FROM: {tool_name}]\n"
-                f"[Original length: {len(content)} chars, Summarized to: {len(summary)} chars]\n\n"
-                f"{summary}\n\n"
-                f"[Note: Full response has been stored and is available if needed]"
-            )
-
-            return summary_with_metadata
+                print(f"Returning the tool call summary \n: {summary_with_metadata}")
+                return summary_with_metadata
 
         except Exception as e:
             logger.error(f"Error summarizing tool response: {e}", exc_info=True)
@@ -279,10 +395,8 @@ def create_tool_response_summarizer(
                 storage_key = f"{tool_name}_{result.id}"
                 _TOOL_RESPONSE_STORAGE[storage_key] = content
                 logger.info(f"Stored full response with key: {storage_key}")
-
             # Summarize the response
             summarized_content = _summarize_tool_content(tool_name, content)
-
             # Create new ToolMessage with summarized content
             return ToolMessage(
                 content=summarized_content,

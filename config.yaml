@@ -46,3 +46,46 @@ context_engineering_info:
   # to ensure consistent behavior across all context management components
   # When messages or tool responses exceed this threshold, they are summarized
   token_threshold: 100000  # 100k tokens
+
+# Deep Research Agent Configuration
+# This agent analyzes error patterns from insights AND performs internet research
+# to find solutions and best practices - it's a single unified agent
+deep_research_agent_model_information:
+  # Prompt template for the deep research agent (handles both error analysis and internet search)
+  deep_research_agent_prompt: prompt_templates/evolution_error_analysis.txt
+  # Model ID for deep research agent
+  model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+  # Inference parameters for deep research
+  inference_parameters:
+    temperature: 0.1
+    max_tokens: 8192
+    top_p: 0.92
+    caching: true
+  # Internet search configuration
+  internet_search:
+    max_results: 5
+    topic: "general"  # Options: general, news, finance
+    include_raw_content: false
+  # Output configuration
+  output:
+    default_output_dir: "reports"
+    default_file_format: "md"  # markdown format
+  # Agent repository access configuration
+  # The deep research agent can access either a local repository or clone from GitHub
+  agent_repository:
+    type: "local"  # Options: "local" or "github"
+    local_path: "/Users/madhurpt/Desktop/self-healing-agent"  # Path to local agent repository
+    github_url: ""  # GitHub URL if type is "github" (e.g., https://github.com/user/repo)
+
+# Routing Configuration
+# Controls conditional routing between insights agent and deep research agent
+routing_configuration:
+  # Small, fast model for routing decisions
+  router_model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
+  # Inference parameters for router
+  inference_parameters:
+    temperature: 0.1
+    max_tokens: 500
+    top_p: 0.92
+  # Routing prompt template path
+  router_prompt_path: prompt_templates/routing_decision_prompt.txt
