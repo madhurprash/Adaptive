@@ -21,7 +21,10 @@ from constants import *
 from typing import Annotated
 from dotenv import load_dotenv
 from langsmith import traceable
+# Import Tavily for internet search
+from tavily import TavilyClient
 from typing_extensions import TypedDict
+from deepagents import create_deep_agent
 from langchain.agents import create_agent
 from typing import Any, Dict, List, Optional
 from langchain_aws import ChatBedrockConverse
@@ -33,7 +36,6 @@ from langchain.agents.middleware import (
     SummarizationMiddleware,
     TodoListMiddleware,
 )
-from deepagents import create_deep_agent
 from deepagents.backends import StateBackend, FilesystemBackend
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 
@@ -41,32 +43,17 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, System
 from agent_middleware.context_middleware import (
     TokenLimitCheckMiddleware,
     tool_response_summarizer,
+    PruneToolCallMiddleware,
 )
 
-from agent_tools.langsmith_tools import (
-    LangSmithConfig,
-    get_session_info,
-    get_runs_from_session,
-    get_session_metadata,
-    get_session_insights,
-    list_sessions,
-    list_session_runs_summary,
-    get_run_details,
-    get_latest_run,
-    get_latest_error_run,
-    get_run_error_only,
-)
-
-from agent_tools.file_tools import (
-    write_file,
-    read_file,
-)
+# Import tools
+# these tools would usually be in an MCP server but
+# here they are for testing purposes
+from agent_tools.file_tools import *
+from agent_tools.langsmith_tools import *
 
 # Load environment variables from .env file
 load_dotenv()
-
-# Import Tavily for internet search
-from tavily import TavilyClient
 
 # Configure logging
 logging.basicConfig(
@@ -118,13 +105,21 @@ This agent is responsible for fetching insights about agents from langSmith
 # initialize the insights agent model information
 insights_agent_model_config: Dict = config_data["insights_agent_model_information"]
 # Initialize LLM
-insights_llm = ChatBedrockConverse(
-    model=insights_agent_model_config["model_id"],
-    temperature=insights_agent_model_config["inference_parameters"]["temperature"],
-    max_tokens=insights_agent_model_config["inference_parameters"]["max_tokens"],
-    top_p=insights_agent_model_config["inference_parameters"]["top_p"],
-)
-logger.info(f"Initialized the insights agent LLM: {insights_llm}")
+if CLAUDE_4_5_SONNET_HINT not in insights_agent_model_config.get('model_id'):
+    insights_llm = ChatBedrockConverse(
+        model=insights_agent_model_config["model_id"],
+        temperature=insights_agent_model_config["inference_parameters"]["temperature"],
+        max_tokens=insights_agent_model_config["inference_parameters"]["max_tokens"],
+        top_p=insights_agent_model_config["inference_parameters"]["top_p"],
+    )
+    logger.info(f"Initialized the insights agent LLM: {insights_llm}")
+else:
+    insights_llm = ChatBedrockConverse(
+        # Claude 4.5 Sonnet does not except temperature or top_p as inference parameters
+        model=insights_agent_model_config["model_id"],
+        max_tokens=insights_agent_model_config["inference_parameters"]["max_tokens"],
+    )
+    logger.info(f"Initialized the insights agent LLM: {insights_llm}")
 
 # initialize the insights agent base system prompt
 insights_agent_base_prompt: str = load_system_prompt(insights_agent_model_config.get('insights_agent_prompt'))
@@ -143,9 +138,9 @@ logger.info(f"Loaded summarization middleware config:\n{json.dumps(summarization
 
 # Initialize the summarization LLM with config values
 summarization_llm = ChatBedrockConverse(
-    model=summarization_config.get("model", insights_agent_model_config["model_id"]),
-    temperature=summarization_config.get('temperature', 0.1),  # Lower temperature for consistent summaries
-    max_tokens=summarization_config.get('max_tokens', 2000),  # Sufficient for summaries
+    model=summarization_config.get("model", summarization_config["model_id"]),
+    temperature=summarization_config.get('temperature', 0.1),  
+    max_tokens=summarization_config.get('max_tokens', 2000),  
 )
 logger.info(f"Initialized summarization LLM with model: {summarization_config.get('model')}")
 
@@ -194,6 +189,16 @@ token_limit_middleware = TokenLimitCheckMiddleware(
 logger.info("TokenLimitCheckMiddleware created successfully")
 
 
+# ---------------- INITIALIZE PRUNE TOOL CALL MIDDLEWARE ----------------
+
+# ✅ Prune ALL tools
+prune_middleware = PruneToolCallMiddleware(
+    tools_to_prune=None,  # None means prune everything
+    max_error_length=500,
+    max_input_length=200
+)
+logger.info(f"Initialized the prune tool call middleware: {prune_middleware}")
+
 # ---------------- INITIALIZE TOOL RESPONSE SUMMARIZER MIDDLEWARE ----------------
 """
 Middleware to automatically summarize large tool responses to prevent context overflow.
@@ -227,19 +232,22 @@ logger.info("Creating TodoListMiddleware...")
 todo_list_middleware = TodoListMiddleware()
 logger.info("TodoListMiddleware created successfully")
 
-
-# Create tools list
+# Create tools list for the langSmith source
+# we will be re writing this logic when there are multiple different sources
 langsmith_tools = [
     get_session_info,
     get_runs_from_session,
     get_session_metadata,
-    get_session_insights,
+    get_session_ai_insights,
     list_sessions,
     list_session_runs_summary,
     get_run_details,
     get_latest_run,
     get_latest_error_run,
     get_run_error_only,
+    get_run_trace,
+    get_child_runs,
+    compare_runs,
 ]
 
 # Create the insights agent using create_react_agent with middleware
@@ -262,6 +270,9 @@ insights_agent = create_agent(
         todo_list_middleware,
         # this is the summarization middleware that will be used to summarize the current conversation with the user
         conversation_summarization_middleware,
+        # this is the middleware that prunes tool call results to only include the tool that was called, and the results
+        # associated to that tool call and no other information. This is to mitigate context bleeding
+        prune_middleware,
     ],
 )
 logger.info(
@@ -446,7 +457,7 @@ def get_insights(
 
     try:
         # Prepare messages for the agent: use existing conversation history
-        messages_to_send = list(existing_messages)  # Copy existing messages (contains all previous insights)
+        messages_to_send = list(existing_messages)
 
         # Only add raw logs if they exist and are not empty
         if raw_logs and raw_logs != {} and "error" not in raw_logs:
@@ -459,7 +470,6 @@ def get_insights(
 {json.dumps(raw_logs, indent=2, default=str)}
 """
         else:
-            # No logs provided, just use conversation history and let agent use tools if needed
             print("💬 [INSIGHTS AGENT] Using conversation history only (no new logs provided)...")
             analysis_prompt = user_question
 
@@ -477,50 +487,165 @@ def get_insights(
         logger.info(f"Sending {len(messages_to_send)} messages to insights agent (including history)")
 
         print("💭 [INSIGHTS AGENT] Thinking and generating response...")
+        print("\n" + "="*80)
+        print("AGENT RESPONSE (streaming):")
+        print("="*80 + "\n")
+        
         # Invoke the insights agent with full conversation context
-        response = insights_agent.invoke({"messages": messages_to_send})
-        print("✅ [INSIGHTS AGENT] Response generated successfully")
+        response = insights_agent.stream(
+            {"messages": messages_to_send}, 
+            stream_mode=["updates", "messages"]
+        )
+        
+        # Collect all messages from the agent execution
+        all_response_messages = []
+        final_ai_message = None
+        current_message_content = ""
+        
+        # Iterate through the stream
+        for stream_mode, chunk in response:
+            logger.debug(f"Stream mode: {stream_mode}, Chunk type: {type(chunk)}")
+            
+            # Handle updates mode (agent steps) - this contains the complete state after each step
+            if stream_mode == "updates":
+                logger.debug(f"Update chunk: {chunk}")
+                # Extract messages from the update
+                for node_name, node_state in chunk.items():
+                    if isinstance(node_state, dict) and 'messages' in node_state:
+                        messages_list = node_state['messages']
+                        logger.debug(f"Node '{node_name}' has {len(messages_list)} messages")
+                        
+                        # Store all messages from this node update
+                        for msg in messages_list:
+                            # Avoid duplicates by checking if message is already in our list
+                            if msg not in all_response_messages:
+                                all_response_messages.append(msg)
+                                
+                                # Log the message type for debugging
+                                msg_type = type(msg).__name__
+                                msg_preview = str(msg.content)[:100] if hasattr(msg, 'content') else str(msg)[:100]
+                                logger.debug(f"  Message type: {msg_type}, Preview: {msg_preview}")
+                                
+                                # Print tool messages as they arrive
+                                if not isinstance(msg, (AIMessage, HumanMessage)):
+                                    print(f"\n🔧 [{msg_type}]")
+                                    if hasattr(msg, 'content'):
+                                        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                                        # Truncate long tool outputs for readability
+                                        if len(content) > 500:
+                                            print(f"{content[:500]}... [truncated, {len(content)} total chars]")
+                                        else:
+                                            print(content)
+                                    print()
+                                
+                                # Keep track of the final AI message
+                                if isinstance(msg, AIMessage):
+                                    final_ai_message = msg
+            
+            # Handle messages mode (LLM tokens and messages) - PRINT TOKENS IN REAL-TIME
+            elif stream_mode == "messages":
+                # Print tokens as they stream for real-time display
+                if hasattr(chunk, 'content') and chunk.content:
+                    if isinstance(chunk.content, str):
+                        # Simple string content - print directly
+                        print(chunk.content, end="", flush=True)
+                        current_message_content += chunk.content
+                    elif isinstance(chunk.content, list):
+                        # Handle structured content (list of dicts with type/text)
+                        for item in chunk.content:
+                            if isinstance(item, dict):
+                                # Extract text from different content types
+                                if item.get('type') == 'text':
+                                    text = item.get('text', '')
+                                    print(text, end="", flush=True)
+                                    current_message_content += text
+                                elif item.get('type') == 'tool_use':
+                                    # Tool use indication - show that a tool is being called
+                                    tool_name = item.get('name', 'unknown')
+                                    print(f"\n\n🔧 [Calling tool: {tool_name}]\n", flush=True)
+                            else:
+                                # Fallback for non-dict items
+                                text = str(item)
+                                print(text, end="", flush=True)
+                                current_message_content += text
+                
+                # Log token usage if available
+                if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+                    usage = chunk.usage_metadata
+                    logger.info(f"Token usage - Input: {usage.get('input_tokens', 'N/A')}, "
+                            f"Output: {usage.get('output_tokens', 'N/A')}, "
+                            f"Total: {usage.get('total_tokens', 'N/A')}")
+                elif hasattr(chunk, 'response_metadata') and chunk.response_metadata:
+                    metadata = chunk.response_metadata
+                    if 'usage' in metadata:
+                        usage = metadata['usage']
+                        logger.info(f"Token usage from metadata - Input: {usage.get('input_tokens', 'N/A')}, "
+                                f"Output: {usage.get('output_tokens', 'N/A')}, "
+                                f"Total: {usage.get('total_tokens', 'N/A')}")
+        
+        # Print newline after streaming completes
+        print("\n")
+        print("="*80)
 
-        # Log token usage from response
-        if "messages" in response and len(response["messages"]) > 0:
-            last_message = response["messages"][-1]
-            if hasattr(last_message, 'usage_metadata') and last_message.usage_metadata:
-                usage = last_message.usage_metadata
-                logger.info(f"Token usage - Input: {usage.get('input_tokens', 'N/A')}, "
-                          f"Output: {usage.get('output_tokens', 'N/A')}, "
-                          f"Total: {usage.get('total_tokens', 'N/A')}")
-            elif hasattr(last_message, 'response_metadata') and last_message.response_metadata:
-                # Alternative location for token usage
-                metadata = last_message.response_metadata
-                if 'usage' in metadata:
-                    usage = metadata['usage']
-                    logger.info(f"Token usage from metadata - Input: {usage.get('input_tokens', 'N/A')}, "
-                              f"Output: {usage.get('output_tokens', 'N/A')}, "
-                              f"Total: {usage.get('total_tokens', 'N/A')}")
+        # Extract insights from FINAL AI message only (skip intermediate responses)
+        # Also collect tool messages to include in the output
+        insights_text = ""
+        tool_messages = []
 
-        # Extract the insights from the response messages
-        if "messages" in response and len(response["messages"]) > 0:
-            # Get the last message (agent's response)
-            last_message = response["messages"][-1]
-            insights_text = last_message.content if hasattr(last_message, 'content') else str(last_message)
+        # Get the last AI message as the final insights
+        for msg in reversed(all_response_messages):
+            if isinstance(msg, AIMessage) and not insights_text:
+                # This is the final AI response
+                if hasattr(msg, 'content') and msg.content:
+                    if isinstance(msg.content, str):
+                        insights_text = msg.content
+                    elif isinstance(msg.content, list):
+                        # Extract text from list of dicts
+                        text_parts = []
+                        for item in msg.content:
+                            if isinstance(item, dict) and item.get('type') == 'text':
+                                text_parts.append(item.get('text', ''))
+                        insights_text = ''.join(text_parts)
+                break
+
+        # Collect tool messages (already pruned by PruneToolCallMiddleware)
+        for msg in all_response_messages:
+            if hasattr(msg, '__class__') and msg.__class__.__name__ == 'ToolMessage':
+                tool_messages.append(msg)
+        
+        # If no insights were built from parts, fall back to final AI message
+        if not insights_text and final_ai_message:
+            if isinstance(final_ai_message.content, str):
+                insights_text = final_ai_message.content
+            elif isinstance(final_ai_message.content, list):
+                # Extract text from list format
+                text_parts = []
+                for item in final_ai_message.content:
+                    if isinstance(item, dict) and item.get('type') == 'text':
+                        text_parts.append(item.get('text', ''))
+                insights_text = ''.join(text_parts)
+            logger.info(f"Using final AI message as insights: {len(insights_text)} characters")
+        
+        # After streaming completes, update state
+        if insights_text:
+            print(f"\n✅ [INSIGHTS AGENT] Completed - {len(all_response_messages)} messages total")
+            print(f"   - Tool messages: {sum(1 for m in all_response_messages if not isinstance(m, (AIMessage, HumanMessage)))}")
+            print(f"   - AI messages: {sum(1 for m in all_response_messages if isinstance(m, AIMessage))}")
+            
             state["insights"] = insights_text
-
+            
             # Add both the user question and agent insights to state messages
-            # The add_messages reducer will append these to existing messages
             new_messages = [
                 HumanMessage(content=user_question),
                 AIMessage(content=insights_text)
             ]
             state["messages"] = new_messages
+            logger.info("Successfully generated insights and updated conversation history")
         else:
-            insights_text = str(response)
-            state["insights"] = insights_text
-            new_messages = [
-                HumanMessage(content=user_question),
-                AIMessage(content=insights_text)
-            ]
-            state["messages"] = new_messages
-        logger.info("Successfully generated insights and updated conversation history")
+            logger.error("No insights text found in either messages or updates stream")
+            logger.error(f"All response messages: {all_response_messages}")
+            raise Exception("No insights generated from stream")
+            
     except Exception as e:
         logger.error(f"Error generating insights: {e}", exc_info=True)
         error_msg = f"Error generating insights: {str(e)}"
@@ -531,6 +656,7 @@ def get_insights(
             AIMessage(content=error_msg)
         ]
         state["messages"] = new_messages
+
     return state
 
 @traceable

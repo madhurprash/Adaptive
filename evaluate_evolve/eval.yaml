@@ -1,0 +1,6 @@
+# We want to create an evaluation framework for the agent and check how the
+# evaluation is done. For this, the agent will be able to rate the responses based
+# on some evaluation prompt template.
+
+# This 
+inference_info:

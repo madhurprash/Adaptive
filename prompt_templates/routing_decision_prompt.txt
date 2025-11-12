@@ -6,17 +6,20 @@ Analyze the following information:
 Determine if the deep research agent should be invoked based on these criteria:
 
 **Invoke Deep Research (ROUTE_TO_RESEARCH) if:**
-1. User is asking about **specific errors** in a project/session (e.g., "this error in this project", "errors in evolve.ai", "why is X failing")
-2. User is asking for **solutions or fixes** to problems (e.g., "how to fix this", "ways to resolve", "troubleshoot")
-3. User is requesting **optimization** or **analysis** based on errors
-4. User is asking to **investigate** or **research** something specific
-5. User mentions **debugging**, **error patterns**, or **performance issues**
+1. User is asking for **solutions or fixes** to problems (e.g., "how to fix this", "ways to resolve", "troubleshoot")
+2. User is requesting **optimization** or **analysis** of solutions to errors
+3. User is asking to **investigate** or **research** something specific for solutioning
+
+IMPORTANT NOTE: DO NOT ROUTE TO RESEARCH IF THE USER IS ONLY ASKING FOR ERRORS AND WHY? Only ROUTE_TO_RESEARCH if the user
+starts asking about solutions.
 
 **Skip Deep Research (END) if:**
 1. User is just **greeting** (e.g., "hello", "hi")
 2. User is asking **general questions** without mentioning specific errors or projects
 3. User is having a **casual conversation**
 4. User is asking **clarifying questions** about the system itself
+5. User is asking about errors and patterns that can be fetched from the dashboard and nothing about solutioning.
+
 
 Respond with ONLY one of these two options in the <RESPONSE_FORMAT></RESPONSE_FORMAT> XML tags:
 
@@ -25,4 +28,4 @@ Respond with ONLY one of these two options in the <RESPONSE_FORMAT></RESPONSE_FO
 - "END" - if no deep research is needed
 </RESPONSE_FORMAT>
 
-DO NOT PROVIDE A REASONING. Your response should be one of the two options above in the XML tags.
+PROVIDE A ONE LINER REASONING of your decision for routing. Your response should be one of the two options above in the XML tags.

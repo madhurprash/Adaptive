@@ -7,7 +7,7 @@ general:
 basic_default_model_information:
   # Represents the model id that the agent will use within the system
   # as an deep agent model
-  model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
+  model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
   # Represents the inference parameters that the foundation model
   # uses at runtime during inference
   inference_parameters:
@@ -32,5 +32,16 @@ advanced_model_information:
 
 agent_prompts:
   system_prompt_fpath: prompts/lambda_autotuner_agent_system_prompt.txt
-  
+
+# Evaluation and testing configuration
+evaluation:
+  # Path to synthetic questions file
+  synthetic_questions_fpath: synthetic_questions/lambda_autotuner_questions.json
+  # Directory to save evaluation results
+  results_output_dir: evaluation_results
+  # Enable debug logging during evaluation
+  debug_logging: false
+  # Number of questions to sample (0 or null means all)
+  sample_size: 0
+
 

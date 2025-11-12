@@ -6,12 +6,12 @@ Your task is to create a concise summary of the conversation that preserves esse
 
 CRITICAL: You MUST preserve the following information in the <critical></critical> xml tags:
 <critical>
+- User's main questions and the agent's answers
 - Session IDs, project names, and any identifiers mentioned
 - Error messages, error types, and failure patterns
 - Key insights and findings about agent performance
 - Tool calls made and their results
 - Specific run IDs or trace IDs discussed
-- User's main questions and the agent's answers
 </critical>
 
 Create your summary using this format in the <response_format></response_format> xml tags below:

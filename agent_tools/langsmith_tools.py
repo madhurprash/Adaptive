@@ -10,7 +10,6 @@ import re
 import logging
 import requests
 from typing import Any, Optional
-from datetime import datetime
 from langchain_core.tools import tool
 
 from pydantic import BaseModel, Field
@@ -99,7 +98,6 @@ def _resolve_session_id(
     if uuid_pattern.match(session_identifier):
         logger.debug(f"'{session_identifier}' appears to be a UUID, using directly")
         return session_identifier
-
     # It's a name, so we need to resolve it to a UUID
     logger.info(f"Resolving project name '{session_identifier}' to UUID...")
 
@@ -109,20 +107,17 @@ def _resolve_session_id(
 
         # Response could be a list or a dict with a sessions key
         sessions = response if isinstance(response, list) else response.get("sessions", [])
-
         for session in sessions:
             if session.get("name") == session_identifier:
                 session_uuid = session.get("id")
                 logger.info(f"Resolved '{session_identifier}' to UUID: {session_uuid}")
                 return session_uuid
-
         # If we didn't find it, raise an error with helpful message
         available_names = [s.get("name") for s in sessions if s.get("name")]
         raise ValueError(
             f"Project '{session_identifier}' not found. "
             f"Available projects: {', '.join(available_names[:10])}"
         )
-
     except Exception as e:
         logger.error(f"Error resolving session name to UUID: {e}")
         raise ValueError(
@@ -135,6 +130,7 @@ def get_session_info(
     session_id: str,
     config: Optional[LangSmithConfig] = None,
     include_stats: bool = True,
+    calculate_all_time_stats: bool = False,
 ) -> dict[str, Any]:
     """
     Get detailed information about a specific LangSmith session/project.
@@ -146,7 +142,10 @@ def get_session_info(
     Args:
         session_id: UUID or name of the LangSmith session/project
         config: LangSmith configuration (uses env vars if not provided)
-        include_stats: Whether to include run statistics
+        include_stats: Whether to include run statistics from the API
+        calculate_all_time_stats: If True, fetches ALL runs and calculates error rate 
+                                   manually (all-time statistics). This overrides 
+                                   include_stats and may be slower for large sessions.
 
     Returns:
         Dictionary containing session details:
@@ -156,12 +155,20 @@ def get_session_info(
         - created_at: Creation timestamp
         - run_count: Total number of runs
         - latency_p50/p99: Latency percentiles (if include_stats=True)
-        - error_rate: Error rate percentage (if include_stats=True)
+        - error_rate: Error rate percentage (if include_stats=True or calculate_all_time_stats=True)
+        - total_runs: Total runs analyzed (if calculate_all_time_stats=True)
+        - error_runs: Number of error runs (if calculate_all_time_stats=True)
+        - success_runs: Number of successful runs (if calculate_all_time_stats=True)
 
     Example:
         >>> config = LangSmithConfig.from_env()
+        >>> # Get basic info with API stats (may be null for inactive sessions)
         >>> info = get_session_info("my-agent-project", config)
         >>> print(f"Session has {info['run_count']} runs")
+        >>> 
+        >>> # Get all-time error rate by analyzing all runs
+        >>> info = get_session_info("my-agent-project", config, calculate_all_time_stats=True)
+        >>> print(f"All-time error rate: {info['error_rate']}%")
     """
     try:
         print(f"In the GET_SESSION_INFO tool, going to get information about specific session/project...")
@@ -171,6 +178,62 @@ def get_session_info(
         # Resolve the session name to UUID if needed
         resolved_session_id = _resolve_session_id(session_id, config)
 
+        # If calculate_all_time_stats is True, fetch all runs and calculate manually
+        if calculate_all_time_stats:
+            print(f"Calculating all-time statistics by fetching all runs for session: {session_id}")
+            
+            # Get basic session info first (without stats to avoid 500 errors)
+            params = {"include_stats": "false"}
+            session_info = _make_request(f"/api/v1/sessions/{resolved_session_id}", config, params=params)
+            
+            # Fetch all runs to calculate error rate
+            all_runs = []
+            offset = 0
+            limit = 100
+            
+            while True:
+                query_params = {
+                    "session": [resolved_session_id],
+                    "limit": limit,
+                    "offset": offset,
+                }
+                
+                response = _make_request("/api/v1/runs/query", config, method="POST", json_data=query_params)
+                runs = response.get("runs", []) if isinstance(response, dict) else response
+                
+                if not runs:
+                    break
+                    
+                all_runs.extend(runs)
+                
+                # If we got fewer runs than the limit, we've reached the end
+                if len(runs) < limit:
+                    break
+                    
+                offset += limit
+                
+                # Safety check to avoid infinite loops
+                if offset > 10000:
+                    logger.warning(f"Reached pagination limit at {offset} runs")
+                    break
+            
+            # Calculate statistics from all runs
+            total_runs = len(all_runs)
+            error_runs = sum(1 for run in all_runs if run.get("status") == "error")
+            success_runs = sum(1 for run in all_runs if run.get("status") == "success")
+            error_rate = (error_runs / total_runs * 100) if total_runs > 0 else 0.0
+            
+            # Add calculated stats to session info
+            session_info["total_runs"] = total_runs
+            session_info["error_runs"] = error_runs
+            session_info["success_runs"] = success_runs
+            session_info["error_rate"] = round(error_rate, 2)
+            session_info["stats_type"] = "all_time_calculated"
+            
+            logger.info(f"Calculated all-time stats for {session_id}: {error_rate:.2f}% error rate ({error_runs}/{total_runs} runs)")
+            return session_info
+        
+        # Otherwise, use the API stats (original behavior)
         params = {"include_stats": str(include_stats).lower()}
         print(f"Fetching info for session: {session_id} (resolved to: {resolved_session_id})")
 
@@ -300,11 +363,11 @@ def get_runs_from_session(
     filter_query: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """
-    Query and retrieve runs from a specific session.
+    Query and retrieve runs from a specific session with full details.
 
-    This tool fetches detailed run data including inputs, outputs, errors, and
-    execution traces. Use this to analyze individual agent executions and identify
-    failure patterns or performance bottlenecks.
+    This tool fetches detailed run data including inputs, outputs, errors,
+    latency, and token usage. Use this to analyze individual agent executions
+    and identify failure patterns or performance bottlenecks.
 
     Args:
         session_id: UUID or name of the LangSmith session
@@ -318,24 +381,26 @@ def get_runs_from_session(
         - id: Run UUID
         - name: Run name/type
         - inputs: Input data passed to the agent
-        - outputs: Output data from the agent
+        - outputs: Output data from the agent (may include token usage in usage_metadata)
         - error: Error message if run failed
         - start_time: Execution start timestamp
         - end_time: Execution end timestamp
         - latency: Execution duration in seconds
         - metadata: Associated metadata
         - feedback_stats: Feedback scores
+        - extra: Additional data (may include token usage in extra.metadata)
 
     Example:
         >>> config = LangSmithConfig.from_env()
-        >>> # Get failed runs
-        >>> runs = get_runs_from_session(
-        ...     "my-agent-project",
-        ...     config,
-        ...     filter_query='eq(status, "error")'
-        ... )
+        >>> # Get all runs with inputs, errors, latency, and tokens
+        >>> runs = get_runs_from_session("my-agent-project", config)
         >>> for run in runs:
+        ...     print(f"Input: {run.get('inputs')}")
         ...     print(f"Error: {run.get('error')}")
+        ...     print(f"Latency: {run.get('latency')} seconds")
+        ...     # Token usage may be in outputs or extra.metadata
+        ...     tokens = run.get('outputs', {}).get('usage_metadata', {})
+        ...     print(f"Tokens: {tokens}")
     """
     try:
         print(f"Going to GET THE RUNS FROM A SPECIFIC SESSION...")
@@ -370,10 +435,16 @@ def list_session_runs_summary(
     filter_query: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """
-    List runs from a session with lightweight metadata only (no full inputs/outputs).
+    [WORKFLOW STEP 1: START BROAD] List runs from a session with lightweight metadata only.
+
+    USE THIS TOOL WHEN:
+    - User asks "what runs are available?" or "show me recent runs"
+    - You need an overview of execution history before diving into details
+    - Starting analysis of a session - this should be your FIRST tool call
+    - You want to identify interesting runs to investigate further
 
     This tool returns a summary of runs to avoid context window overflow. Use this
-    first to see available runs, then use get_run_details() for specific runs.
+    first to see available runs, then use get_run_details() or get_run_trace() for specific runs.
 
     Args:
         session_id: UUID or name of the LangSmith session
@@ -390,8 +461,10 @@ def list_session_runs_summary(
         - start_time: Execution start timestamp
         - end_time: Execution end timestamp
         - latency: Execution duration in milliseconds
-        - error: Error message (truncated to 200 chars if present)
         - run_type: Type of run (chain, llm, tool, etc.)
+        - inputs: Input data passed to the run (full data included)
+        - outputs: Output data from the run (truncated to 500 chars if string)
+        - error: Error message (truncated to 200 chars if present)
 
     Example:
         >>> config = LangSmithConfig.from_env()
@@ -424,7 +497,7 @@ def list_session_runs_summary(
         runs = response.get("runs", []) if isinstance(response, dict) else response
         lightweight_runs = []
         for run in runs:
-            # Only include essential metadata, not full inputs/outputs
+            # Include essential metadata AND inputs (needed for understanding user queries)
             summary = {
                 "id": run.get("id"),
                 "name": run.get("name"),
@@ -434,6 +507,19 @@ def list_session_runs_summary(
                 "latency": run.get("latency"),
                 "run_type": run.get("run_type"),
             }
+
+            # Include inputs - this is critical for understanding what the user asked
+            if run.get("inputs"):
+                summary["inputs"] = run.get("inputs")
+
+            # Include outputs for completeness (truncate if too large)
+            if run.get("outputs"):
+                outputs = run.get("outputs")
+                # If outputs is a dict, keep it; if it's a large string, truncate
+                if isinstance(outputs, str) and len(outputs) > 500:
+                    summary["outputs"] = outputs[:500] + "..."
+                else:
+                    summary["outputs"] = outputs
 
             # Include error message but truncate it
             if run.get("error"):
@@ -456,9 +542,15 @@ def get_run_details(
     config: Optional[LangSmithConfig] = None,
 ) -> dict[str, Any]:
     """
-    Get full details for a specific run by ID.
+    [WORKFLOW STEP 2: DIVE DEEPER] Get full details for a specific run by ID.
 
-    Use this after list_session_runs_summary() to get complete information
+    USE THIS TOOL WHEN:
+    - User asks "what are the details of run X?" or "show me the full run data"
+    - You've identified an interesting run from list_session_runs_summary() and need complete info
+    - You need to see the actual inputs/outputs of a specific execution
+    - Investigating a specific run's complete data including metadata and feedback
+
+    Use this after list_session_runs_summary() or get_latest_run() to get complete information
     about a specific run, including inputs, outputs, and full error traces.
 
     Args:
@@ -513,7 +605,13 @@ def get_latest_run(
     include_details: bool = False,
 ) -> dict[str, Any]:
     """
-    Get the most recent run from a session (lightweight by default).
+    [WORKFLOW STEP 1: START BROAD] Get the most recent run from a session (lightweight by default).
+
+    USE THIS TOOL WHEN:
+    - User asks "what's the latest run?" or "show me the most recent execution"
+    - You want to quickly check current status without loading all runs
+    - Starting investigation and need to see if latest run succeeded/failed
+    - You need a quick snapshot of the most recent activity
 
     This tool fetches ONLY the latest run, avoiding context window overflow.
     By default returns lightweight summary, set include_details=True for full data.
@@ -531,6 +629,9 @@ def get_latest_run(
         - start_time: Execution start timestamp
         - end_time: Execution end timestamp
         - latency: Execution duration in milliseconds
+        - run_type: Type of run
+        - inputs: Input data passed to the run (full data included)
+        - outputs: Output data from the run (truncated to 500 chars if string)
         - error: Error message (if present and include_details=False, truncated to 500 chars)
         - Full details if include_details=True
 
@@ -580,6 +681,18 @@ def get_latest_run(
                 "latency": latest_run.get("latency"),
                 "run_type": latest_run.get("run_type"),
             }
+
+            # Include inputs - critical for understanding what the user asked
+            if latest_run.get("inputs"):
+                summary["inputs"] = latest_run.get("inputs")
+
+            # Include outputs for completeness (truncate if too large)
+            if latest_run.get("outputs"):
+                outputs = latest_run.get("outputs")
+                if isinstance(outputs, str) and len(outputs) > 500:
+                    summary["outputs"] = outputs[:500] + "..."
+                else:
+                    summary["outputs"] = outputs
 
             # Include error message but truncate it
             if latest_run.get("error"):
@@ -750,7 +863,300 @@ def get_run_error_only(
 
 
 @tool
-def get_session_insights(
+def get_run_trace(
+    run_id: str,
+    config: Optional[LangSmithConfig] = None,
+    include_full_details: bool = False,
+) -> dict[str, Any]:
+    """
+    [WORKFLOW STEP 2: DIVE DEEPER] Get the complete execution trace hierarchy for a specific run.
+
+    USE THIS TOOL WHEN:
+    - User asks "what's the trace for this run?" or "show me the execution flow"
+    - You need to understand the parent-child relationship structure
+    - Investigating how a complex workflow executed step-by-step
+    - You want to see the trace tree before getting child run details
+
+    This tool fetches a run and its full trace tree, showing parent-child
+    relationships, execution flow, and nested operations. Essential for
+    understanding complex agent workflows and debugging multi-step processes.
+    Use get_child_runs() after this to get details of specific child operations.
+
+    Args:
+        run_id: UUID of the run to trace
+        config: LangSmith configuration (uses env vars if not provided)
+        include_full_details: If True, includes full inputs/outputs for all runs in trace
+
+    Returns:
+        Dictionary containing the run trace:
+        - id: Run UUID
+        - name: Run name/type
+        - status: Run status
+        - child_runs: List of child run IDs
+        - parent_run_id: Parent run ID (if nested)
+        - trace_id: Trace ID linking related runs
+        - Full run details if include_full_details=True
+
+    Example:
+        >>> config = LangSmithConfig.from_env()
+        >>> trace = get_run_trace("run-uuid-here", config)
+        >>> print(f"Run has {len(trace.get('child_runs', []))} child runs")
+        >>> for child_id in trace.get('child_runs', []):
+        ...     print(f"Child run: {child_id}")
+    """
+    try:
+        print(f"Fetching execution trace for run: {run_id}")
+        if config is None:
+            config = LangSmithConfig.from_env()
+
+        # Fetch the specific run by ID
+        run = _make_request(f"/api/v1/runs/{run_id}", config)
+
+        if include_full_details:
+            logger.info(f"Returning full trace with details for run {run_id}")
+            return run
+        else:
+            # Return lightweight trace structure
+            trace = {
+                "id": run.get("id"),
+                "name": run.get("name"),
+                "status": run.get("status"),
+                "run_type": run.get("run_type"),
+                "start_time": run.get("start_time"),
+                "end_time": run.get("end_time"),
+                "latency": run.get("latency"),
+                "parent_run_id": run.get("parent_run_id"),
+                "child_run_ids": run.get("child_run_ids", []),
+                "trace_id": run.get("trace_id"),
+            }
+
+            if run.get("error"):
+                error_msg = str(run.get("error"))
+                trace["error"] = error_msg[:500] + "..." if len(error_msg) > 500 else error_msg
+
+            logger.info(f"Returning lightweight trace structure for run {run_id}")
+            return trace
+
+    except Exception as e:
+        logger.error(f"An error occurred while getting run trace: {e}")
+        raise
+
+
+@tool
+def get_child_runs(
+    run_id: str,
+    config: Optional[LangSmithConfig] = None,
+    include_details: bool = False,
+) -> list[dict[str, Any]]:
+    """
+    [WORKFLOW STEP 3: ANALYZE STRUCTURE] Get all child runs of a specific parent run.
+
+    USE THIS TOOL WHEN:
+    - User asks "what are the child runs?" or "show me the sub-operations"
+    - You've seen a run has child_run_ids from get_run_trace() and want their details
+    - Analyzing the steps within a complex agent operation
+    - Understanding what sub-operations were executed in a workflow
+
+    This tool fetches the immediate children of a run, useful for analyzing
+    the steps within a complex agent operation. Shows what sub-operations
+    were executed as part of a larger workflow. Use after get_run_trace()
+    to dive into specific nested operations.
+
+    Args:
+        run_id: UUID of the parent run
+        config: LangSmith configuration (uses env vars if not provided)
+        include_details: If True, includes full details for each child run
+
+    Returns:
+        List of child run dictionaries, each containing:
+        - id: Child run UUID
+        - name: Child run name/type
+        - status: Run status
+        - run_type: Type of run (tool, llm, chain, etc.)
+        - start_time: Execution start
+        - end_time: Execution end
+        - latency: Duration in milliseconds
+        - Full details if include_details=True
+
+    Example:
+        >>> config = LangSmithConfig.from_env()
+        >>> children = get_child_runs("parent-run-uuid", config)
+        >>> for child in children:
+        ...     print(f"{child['name']}: {child['status']} ({child['run_type']})")
+    """
+    try:
+        print(f"Fetching child runs for parent run: {run_id}")
+        if config is None:
+            config = LangSmithConfig.from_env()
+
+        # First get the parent run to extract child run IDs
+        parent_run = _make_request(f"/api/v1/runs/{run_id}", config)
+        child_run_ids = parent_run.get("child_run_ids", [])
+
+        if not child_run_ids:
+            logger.info(f"No child runs found for run {run_id}")
+            return []
+
+        print(f"Found {len(child_run_ids)} child runs, fetching details...")
+
+        # Fetch details for each child run
+        child_runs = []
+        for child_id in child_run_ids:
+            try:
+                child_run = _make_request(f"/api/v1/runs/{child_id}", config)
+
+                if include_details:
+                    child_runs.append(child_run)
+                else:
+                    # Return lightweight summary
+                    summary = {
+                        "id": child_run.get("id"),
+                        "name": child_run.get("name"),
+                        "status": child_run.get("status"),
+                        "run_type": child_run.get("run_type"),
+                        "start_time": child_run.get("start_time"),
+                        "end_time": child_run.get("end_time"),
+                        "latency": child_run.get("latency"),
+                    }
+
+                    if child_run.get("error"):
+                        error_msg = str(child_run.get("error"))
+                        summary["error"] = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
+
+                    child_runs.append(summary)
+
+            except Exception as e:
+                logger.warning(f"Failed to fetch child run {child_id}: {e}")
+                continue
+
+        logger.info(f"Successfully fetched {len(child_runs)} child runs")
+        return child_runs
+
+    except Exception as e:
+        logger.error(f"An error occurred while getting child runs: {e}")
+        raise
+
+
+@tool
+def compare_runs(
+    run_ids: list[str],
+    config: Optional[LangSmithConfig] = None,
+    comparison_fields: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """
+    [WORKFLOW STEP 4: COMPARE] Compare multiple runs side-by-side to identify differences and patterns.
+
+    USE THIS TOOL WHEN:
+    - User asks "compare these runs" or "what's different between run X and Y?"
+    - You want to identify patterns across multiple executions
+    - Investigating performance regressions or improvements
+    - Analyzing how different inputs affect outputs or errors
+
+    This tool fetches multiple runs and presents them in a comparable format,
+    highlighting differences in inputs, outputs, errors, and performance.
+    Perfect for A/B testing, debugging regressions, or analyzing variations.
+    Use after list_session_runs_summary() to identify runs worth comparing.
+
+    Args:
+        run_ids: List of run UUIDs to compare (2-5 runs recommended)
+        config: LangSmith configuration (uses env vars if not provided)
+        comparison_fields: Specific fields to compare (default: status, latency, error, run_type)
+
+    Returns:
+        Dictionary containing comparison data:
+        - runs: List of run summaries with compared fields
+        - differences: Highlighted differences between runs
+        - summary: Statistical comparison (avg latency, error rates, etc.)
+
+    Example:
+        >>> config = LangSmithConfig.from_env()
+        >>> comparison = compare_runs(["run-1-uuid", "run-2-uuid"], config)
+        >>> print(f"Latency difference: {comparison['summary']['latency_delta']}ms")
+        >>> for diff in comparison['differences']:
+        ...     print(f"Difference: {diff}")
+    """
+    try:
+        print(f"Comparing {len(run_ids)} runs...")
+        if config is None:
+            config = LangSmithConfig.from_env()
+
+        if len(run_ids) < 2:
+            raise ValueError("Need at least 2 runs to compare")
+
+        if len(run_ids) > 10:
+            logger.warning(f"Comparing {len(run_ids)} runs may be slow, consider reducing")
+
+        # Default comparison fields
+        if comparison_fields is None:
+            comparison_fields = ["status", "latency", "error", "run_type", "start_time"]
+
+        # Fetch all runs
+        runs = []
+        for run_id in run_ids:
+            try:
+                run = _make_request(f"/api/v1/runs/{run_id}", config)
+                runs.append(run)
+            except Exception as e:
+                logger.warning(f"Failed to fetch run {run_id}: {e}")
+                continue
+
+        if len(runs) < 2:
+            raise ValueError("Failed to fetch enough runs for comparison")
+
+        # Extract comparison data
+        comparison_data = {
+            "runs": [],
+            "differences": [],
+            "summary": {}
+        }
+
+        for run in runs:
+            run_summary = {
+                "id": run.get("id"),
+                "name": run.get("name"),
+            }
+
+            for field in comparison_fields:
+                if field == "error" and run.get("error"):
+                    # Truncate error for readability
+                    error_msg = str(run.get("error"))
+                    run_summary[field] = error_msg[:300] + "..." if len(error_msg) > 300 else error_msg
+                else:
+                    run_summary[field] = run.get(field)
+
+            comparison_data["runs"].append(run_summary)
+
+        # Calculate summary statistics
+        latencies = [r.get("latency", 0) for r in runs if r.get("latency")]
+        if latencies:
+            comparison_data["summary"]["avg_latency_ms"] = sum(latencies) / len(latencies)
+            comparison_data["summary"]["min_latency_ms"] = min(latencies)
+            comparison_data["summary"]["max_latency_ms"] = max(latencies)
+            comparison_data["summary"]["latency_delta_ms"] = max(latencies) - min(latencies)
+
+        # Count status distribution
+        statuses = [r.get("status") for r in runs]
+        comparison_data["summary"]["status_distribution"] = {
+            status: statuses.count(status) for status in set(statuses)
+        }
+
+        # Identify key differences
+        for field in comparison_fields:
+            values = [r.get(field) for r in runs]
+            unique_values = set(str(v) for v in values if v is not None)
+            if len(unique_values) > 1:
+                comparison_data["differences"].append(f"{field}: {len(unique_values)} different values")
+
+        logger.info(f"Successfully compared {len(runs)} runs")
+        return comparison_data
+
+    except Exception as e:
+        logger.error(f"An error occurred while comparing runs: {e}")
+        raise
+
+
+@tool
+def get_session_ai_insights(
     session_id: str,
     config: Optional[LangSmithConfig] = None,
     limit: int = 20,

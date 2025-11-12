@@ -1,0 +1,290 @@
+{
+  "project_overview_questions": [
+    {
+      "category": "project_health",
+      "questions": [
+        "What are all my tracing projects?",
+        "Which project has the highest error rate and why?",
+        "Show me the 3 most active projects by run count",
+        "Which projects have 0% error rate?",
+        "What's the average error rate across all my projects?",
+        "List all projects that haven't run in the last 7 days",
+        "Which project has the highest P99 latency?"
+      ]
+    },
+    {
+      "category": "performance_comparison",
+      "questions": [
+        "Compare the P50 and P99 latencies across all projects",
+        "Which project is the slowest on average?",
+        "Show me projects with P99 latency above 50 seconds",
+        "What's the performance difference between evolve.ai and lambda-autotuner-agent?",
+        "Rank my projects by performance (latency)",
+        "Which projects have acceptable performance (P99 < 30s)?"
+      ]
+    },
+    {
+      "category": "activity_metrics",
+      "questions": [
+        "What's the total number of runs across all projects?",
+        "Which project has the most recent activity?",
+        "Show me projects that have run in the last 24 hours",
+        "What's the run count for evolve.ai in the last 7 days?",
+        "How many total runs do I have across all projects?"
+      ]
+    }
+  ],
+  "project_detail_questions": [
+    {
+      "category": "run_analysis",
+      "project": "lambda-autotuner-agent",
+      "questions": [
+        "Show me the latest runs for lambda-autotuner-agent",
+        "What's the error rate for lambda-autotuner-agent?",
+        "How many runs does lambda-autotuner-agent have?",
+        "What are the token stats for lambda-autotuner-agent?",
+        "What's the median token count for this project?",
+        "Show me all runs with errors in lambda-autotuner-agent",
+        "What's the total cost for lambda-autotuner-agent?",
+        "How much have I spent on lambda-autotuner-agent in the last 7 days?",
+        "What percentage of runs are streaming in lambda-autotuner-agent?"
+      ]
+    },
+    {
+      "category": "latency_investigation",
+      "questions": [
+        "What's causing the high latency in lambda-autotuner-agent runs?",
+        "Show me runs with latency above 30 seconds",
+        "What's the P50 latency for lambda-autotuner-agent?",
+        "What's the P99 latency for lambda-autotuner-agent?",
+        "Are there any runs with exceptionally high latency (>60s)?",
+        "Compare latency between successful and failed runs"
+      ]
+    },
+    {
+      "category": "error_investigation",
+      "questions": [
+        "Why is the error rate 2% for lambda-autotuner-agent?",
+        "Show me all failed runs",
+        "What are the common error patterns?",
+        "Which run had the most recent error?",
+        "What's the error message for the failed runs?",
+        "Are errors concentrated in specific time periods?"
+      ]
+    },
+    {
+      "category": "token_and_cost_analysis",
+      "questions": [
+        "What's the total token usage for lambda-autotuner-agent?",
+        "How much does an average run cost?",
+        "What's the median token count per run?",
+        "Show me the most expensive runs",
+        "What's the token-to-cost ratio?",
+        "How many tokens does lambda-autotuner-agent use per run on average?"
+      ]
+    },
+    {
+      "category": "temporal_patterns",
+      "questions": [
+        "Show me runs from the last 24 hours",
+        "What's the run frequency for this project?",
+        "When was the last run?",
+        "Show me all runs from November 11, 2025",
+        "What time of day has the most runs?"
+      ]
+    }
+  ],
+  "trace_detail_questions": [
+    {
+      "category": "trace_breakdown",
+      "run_example": "I'm launching a new feature tomorrow that will increase traffic",
+      "questions": [
+        "Show me the trace waterfall for this run",
+        "How long did the LangGraph execution take?",
+        "What was the total execution time?",
+        "Break down the time spent in each step",
+        "Which step took the longest?",
+        "Show me all the spans in this trace"
+      ]
+    },
+    {
+      "category": "agent_steps",
+      "questions": [
+        "How many agent steps were in this run?",
+        "What tools did the agent invoke?",
+        "How long did the _invoke_agent step take?",
+        "What was the model latency?",
+        "How much time was spent in ChatBedrock calls?",
+        "Show me the list_lambda_functions tool call duration"
+      ]
+    },
+    {
+      "category": "reasoning_analysis",
+      "questions": [
+        "Summarize the agent's reasoning for this run",
+        "What was the agent trying to accomplish?",
+        "What tools did the agent decide to use and why?",
+        "Show me the input and output for each step",
+        "What was the final output?",
+        "How did the agent handle the user request?"
+      ]
+    },
+    {
+      "category": "error_debugging",
+      "questions": [
+        "Where did the error occur in this trace?",
+        "What step failed?",
+        "Show me the error message and stack trace",
+        "What was the agent doing before the error?",
+        "Which tool call caused the failure?",
+        "What was the input that triggered the error?"
+      ]
+    },
+    {
+      "category": "performance_bottleneck",
+      "questions": [
+        "What's the slowest step in this trace?",
+        "Why did this run take 42.81 seconds?",
+        "Which model calls took the longest?",
+        "Is there a bottleneck in tool execution?",
+        "How much time was spent waiting vs executing?",
+        "Can we identify performance optimization opportunities?"
+      ]
+    },
+    {
+      "category": "token_usage",
+      "questions": [
+        "How many tokens were used in this run?",
+        "What was the token distribution across model calls?",
+        "Which step consumed the most tokens?",
+        "Show me input vs output token counts",
+        "What's the token efficiency for this run?"
+      ]
+    }
+  ],
+  "comparative_questions": [
+    {
+      "category": "run_comparison",
+      "questions": [
+        "Compare the performance of my last 5 runs",
+        "Which run was the fastest?",
+        "Show me the difference between successful and failed runs",
+        "How does today's performance compare to yesterday?",
+        "What changed between this run and the previous one?",
+        "Compare token usage across recent runs"
+      ]
+    },
+    {
+      "category": "trend_analysis",
+      "questions": [
+        "Is my error rate increasing or decreasing?",
+        "Show me the latency trend over the last 7 days",
+        "Are my runs getting more expensive?",
+        "Is performance improving over time?",
+        "What's the trend in token usage?"
+      ]
+    }
+  ],
+  "actionable_questions": [
+    {
+      "category": "optimization",
+      "questions": [
+        "What can I do to reduce latency in lambda-autotuner-agent?",
+        "How can I reduce the error rate?",
+        "What steps are taking too long and can be optimized?",
+        "How can I reduce token usage?",
+        "What's causing the high P99 latency?",
+        "Should I be concerned about the 16% error rate in evolve.ai?"
+      ]
+    },
+    {
+      "category": "monitoring_alerts",
+      "questions": [
+        "Alert me when error rate exceeds 5%",
+        "What should I monitor for this project?",
+        "Are there any anomalies in recent runs?",
+        "Show me runs that deviate significantly from normal performance",
+        "What metrics should I track?"
+      ]
+    },
+    {
+      "category": "cost_optimization",
+      "questions": [
+        "How can I reduce costs for this project?",
+        "What's my daily/weekly cost burn rate?",
+        "Which runs are the most expensive?",
+        "Can I optimize token usage to save money?",
+        "What's my projected monthly cost?"
+      ]
+    }
+  ],
+  "complex_multi_step_questions": [
+    {
+      "category": "root_cause_analysis",
+      "questions": [
+        "Investigate why evolve.ai has a 16% error rate - show me failed runs, common patterns, and root causes",
+        "Analyze the performance bottleneck in lambda-autotuner-agent - identify slow steps and suggest optimizations",
+        "Compare the performance characteristics of evolve.ai vs lambda-autotuner-agent and explain the differences",
+        "Find all runs where latency exceeded 40 seconds, analyze what they have in common, and suggest fixes"
+      ]
+    },
+    {
+      "category": "comprehensive_analysis",
+      "questions": [
+        "Give me a health report for all my projects including error rates, performance metrics, and cost analysis",
+        "Analyze my most expensive day of operations and tell me what contributed to the cost",
+        "Show me a complete breakdown of a typical run in lambda-autotuner-agent from start to finish",
+        "Identify any projects that need immediate attention based on error rates, performance, or cost"
+      ]
+    }
+  ],
+  "metadata_questions": [
+    {
+      "category": "project_metadata",
+      "questions": [
+        "What evaluators are configured for lambda-autotuner-agent?",
+        "Are there any automations set up?",
+        "What's the retention policy for this project?",
+        "Show me the project configuration",
+        "What threads exist in this project?"
+      ]
+    },
+    {
+      "category": "dataset_questions",
+      "questions": [
+        "Do I have any datasets associated with this project?",
+        "Show me evaluation results",
+        "What experiments have been run?",
+        "Are there any annotation queues?"
+      ]
+    }
+  ],
+  "natural_language_variations": [
+    {
+      "category": "casual_phrasing",
+      "questions": [
+        "Why is my lambda-autotuner-agent so slow?",
+        "Is evolve.ai broken? The error rate looks high",
+        "How much am I spending on this?",
+        "What's going on with this run?",
+        "Why did this fail?",
+        "Can you explain this trace to me?",
+        "What's eating up all the time here?",
+        "This run looks weird, what happened?",
+        "Help me debug this error",
+        "Why is this taking so long?"
+      ]
+    },
+    {
+      "category": "investigation_style",
+      "questions": [
+        "Walk me through what happened in this run step by step",
+        "I need to understand why we're seeing these errors",
+        "Something changed recently - help me figure out what",
+        "This used to be faster, what's different now?",
+        "Help me prepare for a traffic spike - what do I need to fix?",
+        "My boss is asking about costs - give me the numbers"
+      ]
+    }
+  ]
+}

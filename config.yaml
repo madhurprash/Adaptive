@@ -9,7 +9,7 @@ insights_agent_model_information:
   insights_agent_prompt: prompt_templates/log_curator_base_prompt.txt
   # Represents the model id that the agent will use within the system
   # as an deep agent model
-  model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+  model_id: us.anthropic.claude-3-5-sonnet-20240620-v1:0
   # Represents the inference parameters that the foundation model
   # uses at runtime during inference
   inference_parameters:
@@ -28,7 +28,7 @@ context_engineering_info:
   summarization_middleware: 
     # this is the model that will be used as a summarization
     # model
-    model: us.anthropic.claude-3-5-haiku-20241022-v1:0
+    model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
     # these ate the number of messages to keep after the summarization
     messages_to_keep: 20
     # temperature used for the summarization middleware
@@ -85,7 +85,7 @@ routing_configuration:
   # Inference parameters for router
   inference_parameters:
     temperature: 0.1
-    max_tokens: 500
+    max_tokens: 100
     top_p: 0.92
   # Routing prompt template path
   router_prompt_path: prompt_templates/routing_decision_prompt.txt
