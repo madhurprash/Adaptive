@@ -19,9 +19,12 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import InMemorySaver
 from typing import List, Optional, Any, List, Dict, Literal, Annotated
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-# we will add the basic and the advanced model based on the 
+# we will add the basic and the advanced model based on the
 # message history size
 from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+
+# Import Datadog LLM Observability
+from ddtrace.llmobs import LLMObs
 
 """
 This is an agent that is responsible for autotuning lambda functions
@@ -84,6 +87,12 @@ investigate and consider increasing memory.
 """
 print(f"Loading the env vars...")
 load_dotenv()
+
+# Initialize Datadog LLM Observability
+# When using ddtrace-run, LLMObs will be automatically enabled if DD_LLMOBS_ENABLED=1
+# We just need to ensure the ML app name is set
+print("Datadog LLM Observability will be enabled via ddtrace-run...")
+logger.info("Running with Datadog automatic instrumentation")
 
 config_data: Dict = load_config(CONFIG_FILE_FNAME)
 print(f"Loaded config data: {json.dumps(config_data, indent=4)}")
@@ -216,13 +225,17 @@ def _invoke_agent(state: AgentState) -> AgentState:
         # Get the current messages from state
         messages = state.get("messages", [])
         print(f"In AGENT INVOCATION NODE: Going to invoke the lambda agent with the context: {messages}")
+
         # Invoke the agent with the current messages
+        # LangChain will be auto-traced by Datadog's ddtrace-run
         response = agent.invoke({"messages": messages})
         print(f"RESPONSE: {response['messages']}")
+
         # Return updated state with agent response
         return {"messages": response["messages"]}
     except Exception as e:
         logger.error(f"Error invoking agent: {e}")
+
         error_message = AIMessage(
             content=f"I encountered an error: {str(e)}. Please try again."
         )
@@ -277,22 +290,28 @@ def run_agent_with_session(
     # Create the user message
     user_msg = HumanMessage(content=user_message)
 
-    # Invoke the graph with the user message
-    result = graph.invoke(
-        {"messages": [user_msg]},
-        config=config
-    )
+    try:
+        # Invoke the graph with the user message
+        # Datadog will automatically trace this via ddtrace-run
+        result = graph.invoke(
+            {"messages": [user_msg]},
+            config=config
+        )
 
-    logger.info(f"Agent completed processing for session: {session_id}")
+        logger.info(f"Agent completed processing for session: {session_id}")
 
-    # Extract the last message (agent's response)
-    last_message = result["messages"][-1] if result["messages"] else None
+        # Extract the last message (agent's response)
+        last_message = result["messages"][-1] if result["messages"] else None
+        response_content = last_message.content if last_message else ""
 
-    return {
-        "response": last_message.content if last_message else "",
-        "all_messages": result["messages"],
-        "session_id": session_id
-    }
+        return {
+            "response": response_content,
+            "all_messages": result["messages"],
+            "session_id": session_id
+        }
+    except Exception as e:
+        logger.error(f"Error in session {session_id}: {e}", exc_info=True)
+        raise
 
 
 def main():
