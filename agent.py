@@ -37,7 +37,12 @@ from langchain.agents.middleware import (
     TodoListMiddleware,
 )
 from deepagents.backends import StateBackend, FilesystemBackend
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import (
+    HumanMessage,
+    AIMessage,
+    BaseMessage,
+    SystemMessage,
+)
 
 # Import custom middleware
 from agent_middleware.context_middleware import (
@@ -250,43 +255,307 @@ langsmith_tools = [
     compare_runs,
 ]
 
-# Create the insights agent using create_react_agent with middleware
-# Middleware order matters: they execute in the order listed
-# 1. TokenLimitCheckMiddleware - checks 100k token limit first
-# 2. ToolResponseSummarizer - summarizes large tool outputs
-# 3. TodoListMiddleware - provides task planning and tracking
-# 4. SummarizationMiddleware - handles regular conversation summarization
-logger.info("Creating insights agent with LangSmith tools and middleware stack...")
+# ---------------- AGENTCORE MEMORY INITIALIZATION ----------------
+"""
+Initialize AgentCore Memory for long-term conversation storage and retrieval.
+This enables semantic search and reduces context bleeding by storing full history
+and retrieving only relevant context.
+"""
+
+# Load AgentCore Memory configuration
+agentcore_memory_config = config_data.get('agentcore_memory', {})
+agentcore_memory_enabled = agentcore_memory_config.get('enabled', False)
+
+memory = None
+memory_store = None
+
+if agentcore_memory_enabled:
+    logger.info("AgentCore Memory is enabled. Initializing...")
+
+    try:
+        from agent_memory import initialize_agentcore_memory, get_memory_store
+
+        # Get configuration
+        memory_name = agentcore_memory_config.get('memory_name', 'SelfHealingAgentMemory')
+        region_name = agentcore_memory_config.get('region_name', 'us-west-2')
+        memory_model_id = agentcore_memory_config.get('memory_model_id', 'us.anthropic.claude-3-5-sonnet-20240620-v1:0')
+        description = agentcore_memory_config.get('description', 'Self-healing agent conversation memory')
+
+        # Get IAM role from environment or config
+        memory_execution_role_arn = agentcore_memory_config.get('memory_execution_role_arn')
+
+        if not memory_execution_role_arn:
+            logger.error(
+                "AgentCore Memory role ARN not configured. "
+                "Set AGENTCORE_MEMORY_ROLE_ARN environment variable or agentcore_memory.memory_execution_role_arn in config.yaml"
+            )
+            raise ValueError("Missing AgentCore Memory role ARN")
+
+        # Initialize or get existing memory
+        logger.info(f"Initializing AgentCore Memory: {memory_name}")
+        memory_info = initialize_agentcore_memory(
+            memory_name=memory_name,
+            region_name=region_name,
+            memory_execution_role_arn=memory_execution_role_arn,
+            model_id=memory_model_id,
+            description=description,
+        )
+
+        memory_id = memory_info['id']
+        logger.info(f"AgentCore Memory initialized with ID: {memory_id}")
+
+        # Get memory store for LangGraph integration
+        memory_store = get_memory_store(
+            memory_id=memory_id,
+            region_name=region_name,
+        )
+        logger.info("AgentCore Memory Store created successfully")
+
+        # Use AgentCore Memory checkpointer
+        from langgraph_checkpoint_aws import AgentCoreMemorySaver
+        memory = AgentCoreMemorySaver(
+            memory_id=memory_id,
+            region_name=region_name,
+        )
+        logger.info("Using AgentCore Memory Saver as checkpointer")
+
+    except Exception as e:
+        logger.error(f"Error initializing AgentCore Memory: {e}", exc_info=True)
+        logger.warning("Falling back to in-memory checkpointer")
+        agentcore_memory_enabled = False
+        memory = MemorySaver()
+else:
+    logger.info("AgentCore Memory is disabled. Using in-memory checkpointer...")
+    memory = MemorySaver()
+
+logger.info("Memory checkpointer initialized successfully")
+
+# ---------------- MEMORY HOOKS ----------------
+"""
+Memory hooks for search (pre-model) and storage (post-model).
+These are direct functions called in the get_insights node for minimal code.
+"""
+
+
+def _memory_search_hook(
+    messages: List[BaseMessage],
+    user_id: str,
+) -> List[BaseMessage]:
+    """
+    Pre-model hook: Search AgentCore Memory for relevant context.
+
+    Args:
+        messages: Current conversation messages
+        user_id: User/thread identifier
+
+    Returns:
+        Enriched messages with relevant context from memory
+    """
+    if not agentcore_memory_enabled or not memory_store:
+        logger.debug("Memory search disabled")
+        return messages
+
+    if not messages:
+        logger.debug("No messages to enrich")
+        return messages
+
+    try:
+        # Get context retrieval config
+        context_config = agentcore_memory_config.get('context_retrieval', {})
+        top_k_relevant = context_config.get('top_k_relevant', 3)
+        keep_recent = context_config.get('keep_recent_messages', 3)
+
+        # Extract the latest user question for semantic search
+        user_question = None
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                user_question = msg.content
+                break
+
+        if not user_question:
+            logger.debug("No user question found for memory search")
+            return messages
+
+        logger.info(f"🔍 Searching memory for user: {user_id}")
+        logger.debug(f"Memory search query: {user_question}")
+        logger.debug(f"Namespace: ({user_id}/{ERRORS_AND_INSIGHTS_NAMESPACE})")
+        logger.debug(f"Top K: {top_k_relevant}")
+
+        # Search memory using the correct namespace format
+        # AgentCore Memory expects: (actor_id, namespace_suffix)
+        # BaseStore.search() expects namespace_prefix as a positional argument
+        search_results = memory_store.search(
+            (user_id, ERRORS_AND_INSIGHTS_NAMESPACE),  # Positional argument
+            query=user_question,
+            limit=top_k_relevant,
+        )
+        print(f"SEARCH RESULTS RETURNED BASED ON THE USER AND QUESTION: {search_results}")
+        # Extract relevant context
+        relevant_context = []
+        if search_results:
+            logger.info(f"Found {len(search_results)} relevant memories")
+            for result in search_results:
+                if hasattr(result, 'value') and result.value:
+                    relevant_context.append(result.value)
+        else:
+            logger.info("No relevant memories found")
+
+        # Keep only recent messages
+        recent_messages = (
+            messages[-keep_recent:]
+            if len(messages) > keep_recent
+            else messages
+        )
+
+        # Build enriched messages
+        enriched_messages = []
+
+        # Add relevant context as system message
+        if relevant_context:
+            context_summary = "## Relevant Context from Previous Conversations:\n\n"
+            for i, ctx in enumerate(relevant_context, 1):
+                ctx_str = (
+                    json.dumps(ctx, indent=2, default=str)
+                    if isinstance(ctx, dict)
+                    else str(ctx)
+                )
+                context_summary += f"### Context {i}:\n{ctx_str}\n\n"
+
+            enriched_messages.append(SystemMessage(content=context_summary))
+            print(f"🧠 [MEMORY SEARCH] Retrieved {len(relevant_context)} relevant items")
+
+        # Add recent messages
+        enriched_messages.extend(recent_messages)
+
+        logger.info(f"Enriched: {len(messages)} → {len(enriched_messages)} messages")
+        return enriched_messages
+
+    except Exception as e:
+        logger.error(f"Memory search error: {e}", exc_info=True)
+        print(f"⚠️  [MEMORY SEARCH] Error: {e}")
+        return messages
+
+
+def _memory_store_hook(
+    user_id: str,
+    session_id: Optional[str],
+    user_question: str,
+    ai_response: str,
+    raw_logs: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Post-model hook: Store conversation in AgentCore Memory.
+
+    Args:
+        user_id: User/thread identifier
+        session_id: Session identifier
+        user_question: User's question
+        ai_response: AI's response
+        raw_logs: Optional raw logs to store
+    """
+    if not agentcore_memory_enabled or not memory_store:
+        logger.debug("Memory storage disabled")
+        return
+
+    if not user_question or not ai_response:
+        logger.debug("Missing question or response, skipping storage")
+        return
+
+    try:
+        from datetime import datetime, timezone
+
+        logger.info(f"💾 Storing conversation for user {user_id}...")
+        logger.debug(f"Namespace: ({user_id}, {ERRORS_AND_INSIGHTS_NAMESPACE})")
+        logger.debug(f"Question length: {len(user_question)} chars")
+        logger.debug(f"Response length: {len(ai_response)} chars")
+
+        # Prepare namespace: (actor_id, namespace_suffix)
+        namespace = (user_id, ERRORS_AND_INSIGHTS_NAMESPACE)
+
+        # Add metadata
+        timestamp = datetime.now(timezone.utc).isoformat()
+        session_info = f"\n\n[Session: {session_id}, Timestamp: {timestamp}]"
+
+        # Store user question
+        question_key = f"q_{uuid.uuid4()}"
+        logger.debug(f"Storing question with key: {question_key}")
+        memory_store.put(
+            namespace,  # Positional argument
+            question_key,
+            {"message": HumanMessage(content=f"{user_question}{session_info}")},
+        )
+        logger.debug(f"Question stored successfully")
+
+        # Store AI response
+        response_key = f"a_{uuid.uuid4()}"
+        logger.debug(f"Storing response with key: {response_key}")
+        memory_store.put(
+            namespace,  # Positional argument
+            response_key,
+            {"message": AIMessage(content=f"{ai_response}{session_info}")},
+        )
+        logger.debug(f"Response stored successfully")
+
+        # Store raw logs if provided
+        if raw_logs and raw_logs != {} and "error" not in raw_logs:
+            logs_summary = (
+                f"Raw Logs Context:\n"
+                f"Question: {user_question}\n"
+                f"Insights: {ai_response[:500]}...\n"
+                f"Logs: {json.dumps(raw_logs, indent=2, default=str)[:2000]}...\n"
+                f"{session_info}"
+            )
+            logs_key = f"log_{uuid.uuid4()}"
+            logger.debug(f"Storing logs with key: {logs_key}")
+            logger.debug(f"Logs summary length: {len(logs_summary)} chars")
+            memory_store.put(
+                namespace,  # Positional argument
+                logs_key,
+                {"message": SystemMessage(content=logs_summary)},
+            )
+            logger.info("Stored raw logs in memory")
+            logger.debug(f"Logs stored successfully")
+
+        print("✅ [MEMORY STORAGE] Conversation stored successfully")
+        logger.info("Successfully stored conversation in memory")
+
+    except Exception as e:
+        logger.error(f"Memory storage error: {e}", exc_info=True)
+        print(f"⚠️  [MEMORY STORAGE] Error: {e}")
+
+
+# ---------------- CREATE INSIGHTS AGENT ----------------
+"""
+Create the insights agent with middleware (memory hooks are separate).
+"""
+
+# Build middleware stack (without memory middleware)
+middleware_stack = [
+    # 1. Token limit check - checks 100k token limit first
+    token_limit_middleware,
+    # 2. Tool response summarizer - summarizes large tool outputs
+    tool_summarizer_middleware,
+    # 3. Todo list middleware - provides task planning and tracking
+    todo_list_middleware,
+    # 4. Conversation summarization - handles regular conversation summarization
+    conversation_summarization_middleware,
+    # 5. Prune tool call middleware - reduces context bleeding from tool responses
+    prune_middleware,
+]
+
+# Create the insights agent
+logger.info("Creating insights agent with LangSmith tools and complete middleware stack...")
 insights_agent = create_agent(
     model=insights_llm,
     tools=langsmith_tools,
     system_prompt=insights_agent_base_prompt,
-    middleware=[
-        # this middleware is used to check if the messages or the context window exceeds 100k tokens
-        token_limit_middleware,
-        # this middleware summarizes large tool responses to prevent context overflow
-        tool_summarizer_middleware,
-        # this is a to do list middleware
-        todo_list_middleware,
-        # this is the summarization middleware that will be used to summarize the current conversation with the user
-        conversation_summarization_middleware,
-        # this is the middleware that prunes tool call results to only include the tool that was called, and the results
-        # associated to that tool call and no other information. This is to mitigate context bleeding
-        prune_middleware,
-    ],
-)
-logger.info(
-    "Created the insights agent with middleware stack:\n"
-    "  1. TokenLimitCheckMiddleware (100k token threshold)\n"
-    "  2. ToolResponseSummarizer (summarizes large tool outputs)\n"
-    "  3. TodoListMiddleware (task planning)\n"
-    "  4. SummarizationMiddleware (conversation summarization)"
+    middleware=middleware_stack,
 )
 
-# Initialize in-memory checkpointer for conversation memory
-logger.info("Initializing MemorySaver checkpointer for conversation persistence...")
-memory = MemorySaver()
-logger.info("Memory checkpointer initialized successfully")
+logger.info(
+    f"Created insights agent with {len(middleware_stack)} middleware components:\n"
+    + "\n".join([f"  {i+1}. {type(m).__name__}" for i, m in enumerate(middleware_stack)])
+)
 
 # ---------------- AGENT 2: INITIALIZE THE DEEP RESEARCH AGENT ----------------
 """
@@ -426,9 +695,11 @@ class UnifiedAgentState(TypedDict):
     1. Insights agent to populate raw_logs and insights
     2. Research agent to access both raw_logs and insights for analysis
     3. Conversation memory through messages field
+    4. User identification for AgentCore Memory
     """
     user_question: str
     session_id: Optional[str]
+    user_id: str  # User/thread identifier for AgentCore Memory
     raw_logs: Dict[str, Any]  # Raw logs from LangSmith
     insights: str  # Insights generated by insights agent
     research_results: str  # Research results from research agent
@@ -443,7 +714,7 @@ def get_insights(
     Answer user question with conversation memory.
 
     This node uses conversation history (existing messages) as context.
-    If no history exists and no logs provided, agent can use LangSmith tools.
+    Memory search (pre-model) and storage (post-model) hooks are called directly.
     """
     print("\n🔍 [INSIGHTS AGENT NODE] Starting analysis...")
     logger.info("Generating insights based on conversation history and context...")
@@ -451,14 +722,18 @@ def get_insights(
     user_question = state["user_question"]
     raw_logs = state.get("raw_logs", {})
     existing_messages = state.get("messages", [])
+    user_id = state.get("user_id", "default_user")
+    session_id = state.get("session_id")
 
     print(f"📊 [INSIGHTS AGENT] Found {len(existing_messages)} messages in conversation history")
     logger.info(f"Found {len(existing_messages)} existing messages in conversation history")
 
     try:
-        # Prepare messages for the agent: use existing conversation history
-        messages_to_send = list(existing_messages)
-
+        # PRE-MODEL HOOK: Search memory for relevant context
+        messages_to_send = _memory_search_hook(
+            messages=list(existing_messages),
+            user_id=user_id,
+        )
         # Only add raw logs if they exist and are not empty
         if raw_logs and raw_logs != {} and "error" not in raw_logs:
             print("📋 [INSIGHTS AGENT] Adding raw logs to context...")
@@ -631,9 +906,9 @@ def get_insights(
             print(f"\n✅ [INSIGHTS AGENT] Completed - {len(all_response_messages)} messages total")
             print(f"   - Tool messages: {sum(1 for m in all_response_messages if not isinstance(m, (AIMessage, HumanMessage)))}")
             print(f"   - AI messages: {sum(1 for m in all_response_messages if isinstance(m, AIMessage))}")
-            
+
             state["insights"] = insights_text
-            
+
             # Add both the user question and agent insights to state messages
             new_messages = [
                 HumanMessage(content=user_question),
@@ -641,6 +916,15 @@ def get_insights(
             ]
             state["messages"] = new_messages
             logger.info("Successfully generated insights and updated conversation history")
+
+            # POST-MODEL HOOK: Store conversation in memory
+            _memory_store_hook(
+                user_id=user_id,
+                session_id=session_id,
+                user_question=user_question,
+                ai_response=insights_text,
+                raw_logs=raw_logs,
+            )
         else:
             logger.error("No insights text found in either messages or updates stream")
             logger.error(f"All response messages: {all_response_messages}")
@@ -859,6 +1143,7 @@ def run_agent(
     initial_state: UnifiedAgentState = {
         "user_question": user_question,
         "session_id": session_id,
+        "user_id": thread_id,  # Use thread_id as user_id for AgentCore Memory
         "raw_logs": {},
         "insights": "",
         "research_results": "",
@@ -867,8 +1152,14 @@ def run_agent(
     }
 
     # Configure thread for memory persistence
-    config = {"configurable": {"thread_id": thread_id},
-              "recursion_limit": 50}
+    # AgentCore Memory requires both thread_id and actor_id
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "actor_id": thread_id  # Use thread_id as actor_id for AgentCore Memory
+        },
+        "recursion_limit": 50
+    }
 
     result = app.invoke(initial_state, config=config)
 

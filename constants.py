@@ -27,3 +27,6 @@ DEFAULT_OUTPUT_DIR: str = "reports"
 # This is the Claude model id hint to check to not provide the temperature as a part of the 
 # LLM initialization
 CLAUDE_4_5_SONNET_HINT: str = "sonnet-4-5"
+
+# This is the namespace where the memory will be stored and retrieved from
+ERRORS_AND_INSIGHTS_NAMESPACE: str = "errors_and_insights"

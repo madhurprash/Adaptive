@@ -943,5 +943,8 @@ def clear_tool_response_storage() -> None:
     logger.info("Cleared tool response storage")
 
 
+# Memory middleware classes removed - now using direct hooks in agent.py
+
+
 # Export the function that creates the middleware
 tool_response_summarizer = create_tool_response_summarizer

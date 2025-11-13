@@ -5,11 +5,13 @@ description = "This multi-agent system is responsible for healing and evolving a
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "bedrock-agentcore>=1.0.6",
     "boto3>=1.40.67",
     "ddtrace>=3.18.1",
     "deepagents>=0.2.5",
     "langchain",
     "langchain-aws>=1.0.0",
+    "langgraph-checkpoint-aws>=1.0.1",
     "python-dotenv>=1.2.1",
     "requests>=2.32.0",
     "tavily>=1.1.0",

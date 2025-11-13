@@ -89,3 +89,28 @@ routing_configuration:
     top_p: 0.92
   # Routing prompt template path
   router_prompt_path: prompt_templates/routing_decision_prompt.txt
+
+# AgentCore Memory Configuration
+# Manages long-term conversation memory with semantic search and context retrieval
+agentcore_memory:
+  # Enable or disable AgentCore Memory (set to false to use in-memory only)
+  enabled: true
+  # Memory name - unique identifier for this agent's memory
+  memory_name: "SelfHealingAgentMemory"
+  # Description of the memory purpose
+  description: "Conversation memory for self-healing agent with error analysis and insights"
+  # AWS region for AgentCore Memory service
+  region_name: "us-west-2"
+  # IAM role ARN with permissions for memory operations
+  # Must have bedrock:* permissions and trust policy for AgentCore Memory
+  memory_execution_role_arn: "arn:aws:iam::218208277580:role/BedrockAgentCoreMemoryExecutionRole"  # Set via environment variable: AGENTCORE_MEMORY_ROLE_ARN
+  # Model ID for memory extraction and consolidation
+  memory_model_id: "us.anthropic.claude-3-5-sonnet-20240620-v1:0"
+  # Context retrieval settings
+  context_retrieval:
+    # Number of most relevant messages to retrieve from memory
+    top_k_relevant: 3
+    # Number of most recent raw messages to keep in context
+    keep_recent_messages: 3
+    # Maximum messages to store per user before triggering consolidation
+    max_messages_before_consolidation: 50
