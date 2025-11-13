@@ -5,13 +5,17 @@ set -e
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Load environment variables from .env file
+# Load environment variables from .env file (check both locations)
 if [ -f "$SCRIPT_DIR/.env" ]; then
-    echo "Loading environment variables from .env file..."
+    echo "Loading environment variables from $SCRIPT_DIR/.env..."
     export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
+elif [ -f "$PARENT_DIR/.env" ]; then
+    echo "Loading environment variables from $PARENT_DIR/.env..."
+    export $(grep -v '^#' "$PARENT_DIR/.env" | xargs)
 else
-    echo "Warning: .env file not found at $SCRIPT_DIR/.env"
+    echo "Error: .env file not found in $SCRIPT_DIR or $PARENT_DIR"
     exit 1
 fi
 
@@ -41,5 +45,5 @@ echo "DD_API_KEY: ${DD_API_KEY:0:10}..." # Show only first 10 chars for security
 echo "=========================================="
 
 # Run the agent with ddtrace-run for automatic instrumentation
-cd "$SCRIPT_DIR"
+cd "$PARENT_DIR"
 uv run ddtrace-run python run_synthetic_questions.py "$@"

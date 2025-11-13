@@ -24,9 +24,39 @@ USE_SUDO_FOR_FILE_OPS: bool = False
 # Default output directory for reports and analysis files
 DEFAULT_OUTPUT_DIR: str = "reports"
 
-# This is the Claude model id hint to check to not provide the temperature as a part of the 
+# This is the Claude model id hint to check to not provide the temperature as a part of the
 # LLM initialization
 CLAUDE_4_5_SONNET_HINT: str = "sonnet-4-5"
 
 # This is the namespace where the memory will be stored and retrieved from
-ERRORS_AND_INSIGHTS_NAMESPACE: str = "errors_and_insights"
+ERRORS_AND_INSIGHTS_NAMESPACE: str = "errors_and_insightsn"
+
+
+# =============================================================================
+# MCP SERVER CONSTANTS
+# =============================================================================
+
+# MCP Server script paths (relative to project root)
+LANGSMITH_MCP_SERVER_PATH: str = "agent_tools/langsmith_mcp_server.py"
+LANGFUSE_MCP_SERVER_PATH: str = "agent_tools/langfuse_mcp_server.py"
+
+# MCP Server command and args
+MCP_SERVER_COMMAND: str = "uv"
+MCP_SERVER_BASE_ARGS: list[str] = ["run", "python"]
+
+
+# =============================================================================
+# OBSERVABILITY PLATFORM CONSTANTS
+# =============================================================================
+
+# Supported observability platforms
+PLATFORM_LANGSMITH: str = "langsmith"
+PLATFORM_LANGFUSE: str = "langfuse"
+
+SUPPORTED_PLATFORMS: tuple[str, ...] = (
+    PLATFORM_LANGSMITH,
+    PLATFORM_LANGFUSE,
+)
+
+# Default platform if none specified
+DEFAULT_PLATFORM: str = PLATFORM_LANGSMITH

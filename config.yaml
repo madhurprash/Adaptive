@@ -5,11 +5,17 @@ general:
 # This contains the model information for various agents
 # in our multi agentic system
 insights_agent_model_information:
-  # this is the prompt template that the insights agent uses
+  # Observability platform to use (langsmith or langfuse)
+  # Leave empty to auto-detect from environment variables or user question
+  observability_platform: ""  # Options: "langsmith", "langfuse", or "" for auto-detect
+
+  # this is the prompt template that the insights agent uses (framework-agnostic)
   insights_agent_prompt: prompt_templates/log_curator_base_prompt.txt
+
   # Represents the model id that the agent will use within the system
   # as an deep agent model
   model_id: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+
   # Represents the inference parameters that the foundation model
   # uses at runtime during inference
   inference_parameters:
@@ -89,6 +95,24 @@ routing_configuration:
     top_p: 0.92
   # Routing prompt template path
   router_prompt_path: prompt_templates/routing_decision_prompt.txt
+
+# Platform Router Configuration
+# Dynamically determines which observability platform to use based on user question
+platform_router_configuration:
+  # Enable dynamic platform routing (if false, uses insights_agent_model_information.observability_platform)
+  enabled: true
+  # Enable session-based platform persistence (if true, prompts user once at session start)
+  # If false, uses the router on every turn to determine platform from user question
+  session_based_persistence: true
+  # Small, fast model for platform routing decisions
+  router_model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
+  # Inference parameters for platform router
+  inference_parameters:
+    temperature: 0.1
+    max_tokens: 50
+    top_p: 0.92
+  # Platform routing prompt template path
+  router_prompt_path: prompt_templates/platform_router_prompt.txt
 
 # AgentCore Memory Configuration
 # Manages long-term conversation memory with semantic search and context retrieval

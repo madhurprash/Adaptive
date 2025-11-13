@@ -9,6 +9,7 @@ from utils import *
 from constants import *
 from dotenv import load_dotenv
 from tavily import TavilyClient
+from langfuse import get_client
 from langsmith import traceable
 from botocore.config import Config
 from pydantic import BaseModel, Field
@@ -25,6 +26,9 @@ from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResp
 
 # Import Datadog LLM Observability
 from ddtrace.llmobs import LLMObs
+
+# Import Langfuse for LangChain tracing
+from langfuse.langchain import CallbackHandler
 
 """
 This is an agent that is responsible for autotuning lambda functions
@@ -93,6 +97,15 @@ load_dotenv()
 # We just need to ensure the ML app name is set
 print("Datadog LLM Observability will be enabled via ddtrace-run...")
 logger.info("Running with Datadog automatic instrumentation")
+
+# Initialize the langfuse client
+langfuse = get_client()
+
+# Initialize Langfuse callback handler
+langfuse_handler = CallbackHandler(
+    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+)
+logger.info("Initialized Langfuse tracing for LangChain")
 
 config_data: Dict = load_config(CONFIG_FILE_FNAME)
 print(f"Loaded config data: {json.dumps(config_data, indent=4)}")
@@ -227,8 +240,11 @@ def _invoke_agent(state: AgentState) -> AgentState:
         print(f"In AGENT INVOCATION NODE: Going to invoke the lambda agent with the context: {messages}")
 
         # Invoke the agent with the current messages
-        # LangChain will be auto-traced by Datadog's ddtrace-run
-        response = agent.invoke({"messages": messages})
+        # LangChain will be auto-traced by Datadog's ddtrace-run and Langfuse
+        response = agent.invoke(
+            {"messages": messages},
+            config={"callbacks": [langfuse_handler]}
+        )
         print(f"RESPONSE: {response['messages']}")
 
         # Return updated state with agent response
@@ -293,9 +309,13 @@ def run_agent_with_session(
     try:
         # Invoke the graph with the user message
         # Datadog will automatically trace this via ddtrace-run
+        # Langfuse will trace via callback handler
         result = graph.invoke(
             {"messages": [user_msg]},
-            config=config
+            config={
+                **config,
+                "callbacks": [langfuse_handler]
+            }
         )
 
         logger.info(f"Agent completed processing for session: {session_id}")

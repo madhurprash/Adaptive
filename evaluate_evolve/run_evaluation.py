@@ -16,7 +16,7 @@ from io import StringIO
 # Add parent directory to path to import agent
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent import run_agent
+from evolve_agents import run_agent
 
 
 # Configure logging

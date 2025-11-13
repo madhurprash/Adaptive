@@ -25,17 +25,12 @@ from langsmith import traceable
 from tavily import TavilyClient
 from typing_extensions import TypedDict
 from deepagents import create_deep_agent
-from langchain.agents import create_agent
 from typing import Any, Dict, List, Optional
 from langchain_aws import ChatBedrockConverse
 from langgraph.graph.message import add_messages
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
-from langchain.agents.middleware import (
-    SummarizationMiddleware,
-    TodoListMiddleware,
-)
 from deepagents.backends import StateBackend, FilesystemBackend
 from langchain_core.messages import (
     HumanMessage,
@@ -44,18 +39,11 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
-# Import custom middleware
-from agent_middleware.context_middleware import (
-    TokenLimitCheckMiddleware,
-    tool_response_summarizer,
-    PruneToolCallMiddleware,
-)
-
 # Import tools
-# these tools would usually be in an MCP server but
-# here they are for testing purposes
 from agent_tools.file_tools import *
-from agent_tools.langsmith_tools import *
+
+# Import insights agent factory for dynamic platform-based agent creation
+from insights.insights_agents import InsightsAgentFactory
 
 # Load environment variables from .env file
 load_dotenv()
@@ -102,158 +90,20 @@ except Exception as e:
     logger.warning(f"Could not load routing prompt: {e}")
     router_prompt_template = "Determine if deep research is needed. Respond with 'ROUTE_TO_RESEARCH' or 'END'."
 
-# ---------------- AGENT 1: INITIALIZE THE INSIGHTS AGENT ----------------
+# ---------------- INSIGHTS AGENT FACTORY INITIALIZATION ----------------
 """
-This agent is responsible for fetching insights about agents from langSmith
+Initialize the InsightsAgentFactory that will create platform-specific agents
+dynamically based on the user's question.
+
+The factory handles:
+1. LLM initialization
+2. Middleware stack creation
+3. MCP tool connection
+4. Platform-specific prompt loading
 """
-
-# initialize the insights agent model information
-insights_agent_model_config: Dict = config_data["insights_agent_model_information"]
-# Initialize LLM
-if CLAUDE_4_5_SONNET_HINT not in insights_agent_model_config.get('model_id'):
-    insights_llm = ChatBedrockConverse(
-        model=insights_agent_model_config["model_id"],
-        temperature=insights_agent_model_config["inference_parameters"]["temperature"],
-        max_tokens=insights_agent_model_config["inference_parameters"]["max_tokens"],
-        top_p=insights_agent_model_config["inference_parameters"]["top_p"],
-    )
-    logger.info(f"Initialized the insights agent LLM: {insights_llm}")
-else:
-    insights_llm = ChatBedrockConverse(
-        # Claude 4.5 Sonnet does not except temperature or top_p as inference parameters
-        model=insights_agent_model_config["model_id"],
-        max_tokens=insights_agent_model_config["inference_parameters"]["max_tokens"],
-    )
-    logger.info(f"Initialized the insights agent LLM: {insights_llm}")
-
-# initialize the insights agent base system prompt
-insights_agent_base_prompt: str = load_system_prompt(insights_agent_model_config.get('insights_agent_prompt'))
-logger.info(f"Loaded the insights agent base system prompt")
-
-# ---------------- INITIALIZE SUMMARIZATION MIDDLEWARE ----------------
-"""
-Create a lightweight LLM for conversation summarization.
-Uses configuration from context_engineering_info for optimal summarization.
-"""
-logger.info("Initializing summarization LLM for middleware...")
-
-# Get summarization middleware configuration
-summarization_config: Dict = context_engineering_info.get('summarization_middleware')
-logger.info(f"Loaded summarization middleware config:\n{json.dumps(summarization_config, indent=4)}")
-
-# Initialize the summarization LLM with config values
-summarization_llm = ChatBedrockConverse(
-    model=summarization_config.get("model", summarization_config["model_id"]),
-    temperature=summarization_config.get('temperature', 0.1),  
-    max_tokens=summarization_config.get('max_tokens', 2000),  
-)
-logger.info(f"Initialized summarization LLM with model: {summarization_config.get('model')}")
-
-# Load the custom summarization prompt
-summary_prompt_path: str = summarization_config.get('summary_prompt')
-summary_prompt_text: Optional[str] = None
-
-if summary_prompt_path:
-    try:
-        summary_prompt_text = load_system_prompt(summary_prompt_path)
-        logger.info(f"Loaded custom summarization prompt from: {summary_prompt_path}")
-    except Exception as e:
-        logger.warning(f"Could not load summary prompt from {summary_prompt_path}: {e}. Using default.")
-        summary_prompt_text = None
-else:
-    logger.info("No custom summary prompt configured, using LangChain default")
-
-# Create the summarization middleware with config values
-logger.info("Creating SummarizationMiddleware...")
-middleware_params = {
-    "model": summarization_llm,
-    "max_tokens_before_summary": summarization_config.get("max_tokens_before_summary", 4000),
-    "messages_to_keep": summarization_config.get("messages_to_keep", 20),
-}
-
-# Add custom summary prompt if available
-if summary_prompt_text:
-    middleware_params["summary_prompt"] = summary_prompt_text
-
-conversation_summarization_middleware = SummarizationMiddleware(**middleware_params)
-logger.info(f"SummarizationMiddleware created successfully with max_tokens_before_summary={middleware_params['max_tokens_before_summary']}, messages_to_keep={middleware_params['messages_to_keep']}")
-
-
-# ---------------- INITIALIZE CUSTOM TOKEN LIMIT MIDDLEWARE ----------------
-"""
-Custom middleware to check if input tokens exceed 100k before model calls.
-If exceeded, triggers automatic summarization.
-"""
-logger.info("Creating TokenLimitCheckMiddleware...")
-token_limit_middleware = TokenLimitCheckMiddleware(
-    model=insights_llm,
-    summarization_llm=summarization_llm,
-    token_threshold=config_data['context_engineering_info'].get('token_threshold', 100000),
-    summary_prompt=summary_prompt_text,
-)
-logger.info("TokenLimitCheckMiddleware created successfully")
-
-
-# ---------------- INITIALIZE PRUNE TOOL CALL MIDDLEWARE ----------------
-
-# ✅ Prune ALL tools
-prune_middleware = PruneToolCallMiddleware(
-    tools_to_prune=None,  # None means prune everything
-    max_error_length=500,
-    max_input_length=200
-)
-logger.info(f"Initialized the prune tool call middleware: {prune_middleware}")
-
-# ---------------- INITIALIZE TOOL RESPONSE SUMMARIZER MIDDLEWARE ----------------
-"""
-Middleware to automatically summarize large tool responses to prevent context overflow.
-Uses the SAME token threshold, summarization LLM, and summarization prompt as TokenLimitCheckMiddleware
-to ensure consistent context management across all components.
-"""
-logger.info("Creating tool_response_summarizer middleware...")
-
-# Use the same token threshold as TokenLimitCheckMiddleware (100k tokens)
-tool_response_token_threshold = config_data['context_engineering_info'].get('token_threshold', 100000)
-
-# Create the tool response summarizer middleware with same config as TokenLimitCheckMiddleware
-tool_summarizer_middleware = tool_response_summarizer(
-    summarization_llm=summarization_llm,
-    token_threshold=tool_response_token_threshold,  # Same 100k threshold
-    store_full_responses=True,  # Store full responses for retrieval if needed
-    summary_prompt=summary_prompt_text,  # Same summarization prompt
-)
-logger.info(
-    f"Tool response summarizer created with:\n"
-    f"  - token_threshold={tool_response_token_threshold} (same as TokenLimitCheckMiddleware)\n"
-    f"  - Using same summarization prompt and LLM"
-)
-
-
-# ---------------- INITIALIZE TODO LIST MIDDLEWARE ----------------
-"""
-Todo list middleware to equip the agent with task planning and tracking capabilities.
-"""
-logger.info("Creating TodoListMiddleware...")
-todo_list_middleware = TodoListMiddleware()
-logger.info("TodoListMiddleware created successfully")
-
-# Create tools list for the langSmith source
-# we will be re writing this logic when there are multiple different sources
-langsmith_tools = [
-    get_session_info,
-    get_runs_from_session,
-    get_session_metadata,
-    get_session_ai_insights,
-    list_sessions,
-    list_session_runs_summary,
-    get_run_details,
-    get_latest_run,
-    get_latest_error_run,
-    get_run_error_only,
-    get_run_trace,
-    get_child_runs,
-    compare_runs,
-]
+logger.info("Initializing InsightsAgentFactory for dynamic agent creation...")
+insights_agent_factory = InsightsAgentFactory(config_file_path=CONFIG_FILE_FPATH)
+logger.info("✅ InsightsAgentFactory initialized successfully")
 
 # ---------------- AGENTCORE MEMORY INITIALIZATION ----------------
 """
@@ -524,38 +374,9 @@ def _memory_store_hook(
         print(f"⚠️  [MEMORY STORAGE] Error: {e}")
 
 
-# ---------------- CREATE INSIGHTS AGENT ----------------
-"""
-Create the insights agent with middleware (memory hooks are separate).
-"""
-
-# Build middleware stack (without memory middleware)
-middleware_stack = [
-    # 1. Token limit check - checks 100k token limit first
-    token_limit_middleware,
-    # 2. Tool response summarizer - summarizes large tool outputs
-    tool_summarizer_middleware,
-    # 3. Todo list middleware - provides task planning and tracking
-    todo_list_middleware,
-    # 4. Conversation summarization - handles regular conversation summarization
-    conversation_summarization_middleware,
-    # 5. Prune tool call middleware - reduces context bleeding from tool responses
-    prune_middleware,
-]
-
-# Create the insights agent
-logger.info("Creating insights agent with LangSmith tools and complete middleware stack...")
-insights_agent = create_agent(
-    model=insights_llm,
-    tools=langsmith_tools,
-    system_prompt=insights_agent_base_prompt,
-    middleware=middleware_stack,
-)
-
-logger.info(
-    f"Created insights agent with {len(middleware_stack)} middleware components:\n"
-    + "\n".join([f"  {i+1}. {type(m).__name__}" for i, m in enumerate(middleware_stack)])
-)
+# Note: Insights agent is now created dynamically in the get_insights node
+# based on the platform determined from the user's question.
+# The InsightsAgentFactory handles all middleware, LLM, and tool initialization.
 
 # ---------------- AGENT 2: INITIALIZE THE DEEP RESEARCH AGENT ----------------
 """
@@ -696,25 +517,77 @@ class UnifiedAgentState(TypedDict):
     2. Research agent to access both raw_logs and insights for analysis
     3. Conversation memory through messages field
     4. User identification for AgentCore Memory
+    5. Platform persistence across conversation turns
     """
     user_question: str
     session_id: Optional[str]
     user_id: str  # User/thread identifier for AgentCore Memory
+    platform: Optional[str]  # Selected observability platform (persisted across session)
     raw_logs: Dict[str, Any]  # Raw logs from LangSmith
     insights: str  # Insights generated by insights agent
     research_results: str  # Research results from research agent
     output_file_path: str  # Path to output report file
     messages: Annotated[List[BaseMessage], add_messages]
 
+
+def select_platform(
+    state: UnifiedAgentState
+) -> UnifiedAgentState:
+    """
+    Prompt user to select observability platform at session start.
+
+    This node:
+    1. Checks if platform is already selected in state
+    2. If not, prompts user to choose between LangSmith and Langfuse
+    3. Stores the selection in state for the entire session
+    """
+    existing_platform = state.get("platform")
+
+    # If platform already selected, skip prompt
+    if existing_platform:
+        print(f"✅ [PLATFORM] Using previously selected platform: {existing_platform}")
+        logger.info(f"Platform already selected: {existing_platform}")
+        return state
+
+    # Prompt user for platform selection
+    print("\n🔍 [PLATFORM SELECTION] Please select your observability platform:")
+    print("   1. LangSmith")
+    print("   2. Langfuse")
+
+    while True:
+        choice = input("\nEnter your choice (1 or 2): ").strip()
+
+        if choice == "1":
+            selected_platform = "langsmith"
+            print("✅ Selected: LangSmith")
+            logger.info("User selected LangSmith platform")
+            break
+        elif choice == "2":
+            selected_platform = "langfuse"
+            print("✅ Selected: Langfuse")
+            logger.info("User selected Langfuse platform")
+            break
+        else:
+            print("❌ Invalid choice. Please enter 1 or 2.")
+
+    # Store platform in state
+    state["platform"] = selected_platform
+
+    return state
+
+
 @traceable
 def get_insights(
     state: UnifiedAgentState
 ) -> UnifiedAgentState:
     """
-    Answer user question with conversation memory.
+    Answer user question with conversation memory and platform-specific agent.
 
-    This node uses conversation history (existing messages) as context.
-    Memory search (pre-model) and storage (post-model) hooks are called directly.
+    This node:
+    1. Determines which observability platform to use (LangSmith or Langfuse)
+    2. Dynamically creates the appropriate insights agent with platform-specific tools
+    3. Uses conversation history (existing messages) as context
+    4. Memory search (pre-model) and storage (post-model) hooks are called directly
     """
     print("\n🔍 [INSIGHTS AGENT NODE] Starting analysis...")
     logger.info("Generating insights based on conversation history and context...")
@@ -724,11 +597,43 @@ def get_insights(
     existing_messages = state.get("messages", [])
     user_id = state.get("user_id", "default_user")
     session_id = state.get("session_id")
+    stored_platform = state.get("platform")  # Get platform from state
 
     print(f"📊 [INSIGHTS AGENT] Found {len(existing_messages)} messages in conversation history")
     logger.info(f"Found {len(existing_messages)} existing messages in conversation history")
 
     try:
+        # STEP 1: Get platform from state (selected at session start)
+        platform = stored_platform
+        if not platform:
+            # This shouldn't happen with the new flow, but fallback to default if it does
+            platform = DEFAULT_PLATFORM
+            logger.warning(f"No platform found in state, using default: {platform}")
+            print(f"⚠️  [PLATFORM] No platform selected, using default: {platform}")
+        else:
+            logger.info(f"Using platform from session: {platform}")
+            print(f"✅ [PLATFORM] Using session platform: {platform}")
+
+        # STEP 2: Create platform-specific insights agent dynamically
+        print(f"🏗️  [AGENT FACTORY] Creating {platform} insights agent...")
+        logger.info(f"Creating insights agent for platform: {platform}")
+
+        from insights.insights_agents import ObservabilityPlatform
+
+        # Convert string to enum
+        if platform == PLATFORM_LANGSMITH:
+            platform_enum = ObservabilityPlatform.LANGSMITH
+        elif platform == PLATFORM_LANGFUSE:
+            platform_enum = ObservabilityPlatform.LANGFUSE
+        else:
+            logger.warning(f"Unknown platform {platform}, defaulting to {DEFAULT_PLATFORM}")
+            platform_enum = ObservabilityPlatform.LANGSMITH
+
+        # Create the agent using the factory
+        insights_agent = insights_agent_factory.create_insights_agent(platform=platform_enum)
+        logger.info(f"✅ Created {platform} insights agent successfully")
+        print(f"✅ [AGENT FACTORY] {platform.capitalize()} insights agent ready")
+
         # PRE-MODEL HOOK: Search memory for relevant context
         messages_to_send = _memory_search_hook(
             messages=list(existing_messages),
@@ -750,15 +655,6 @@ def get_insights(
 
         messages_to_send.append(HumanMessage(content=analysis_prompt))
         logger.info(f"Constructed the insights agent prompt with {len(analysis_prompt)} characters")
-
-        # Count tokens before sending
-        try:
-            input_token_count = insights_llm.get_num_tokens_from_messages(messages_to_send)
-            logger.info(f"Input token count: {input_token_count}")
-        except Exception as e:
-            logger.warning(f"Could not count input tokens: {e}")
-            input_token_count = None
-
         logger.info(f"Sending {len(messages_to_send)} messages to insights agent (including history)")
 
         print("💭 [INSIGHTS AGENT] Thinking and generating response...")
@@ -1097,11 +993,13 @@ def _build_graph() -> StateGraph:
     workflow = StateGraph(UnifiedAgentState)
 
     # Add nodes
+    workflow.add_node("select_platform", select_platform)
     workflow.add_node("get_insights", get_insights)
     workflow.add_node("analyze_errors", analyze_error_patterns)
 
-    # Define edges
-    workflow.add_edge(START, "get_insights")
+    # Define edges - platform selection happens first
+    workflow.add_edge(START, "select_platform")
+    workflow.add_edge("select_platform", "get_insights")
 
     # Conditional routing: Use LLM to decide if deep research is needed
     workflow.add_conditional_edges(
