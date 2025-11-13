@@ -8,14 +8,11 @@ insights_agent_model_information:
   # Observability platform to use (langsmith or langfuse)
   # Leave empty to auto-detect from environment variables or user question
   observability_platform: ""  # Options: "langsmith", "langfuse", or "" for auto-detect
-
   # this is the prompt template that the insights agent uses (framework-agnostic)
   insights_agent_prompt: prompt_templates/log_curator_base_prompt.txt
-
   # Represents the model id that the agent will use within the system
   # as an deep agent model
   model_id: us.anthropic.claude-3-5-sonnet-20240620-v1:0
-
   # Represents the inference parameters that the foundation model
   # uses at runtime during inference
   inference_parameters:

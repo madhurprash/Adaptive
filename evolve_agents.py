@@ -15,6 +15,7 @@ import json
 import yaml
 import uuid
 import logging
+import asyncio
 import argparse
 from utils import *
 from constants import *
@@ -148,12 +149,9 @@ if agentcore_memory_enabled:
             region_name=region_name,
             memory_execution_role_arn=memory_execution_role_arn,
             model_id=memory_model_id,
-            description=description,
-        )
-
+            description=description)
         memory_id = memory_info['id']
         logger.info(f"AgentCore Memory initialized with ID: {memory_id}")
-
         # Get memory store for LangGraph integration
         memory_store = get_memory_store(
             memory_id=memory_id,
@@ -186,7 +184,6 @@ Memory hooks for search (pre-model) and storage (post-model).
 These are direct functions called in the get_insights node for minimal code.
 """
 
-
 def _memory_search_hook(
     messages: List[BaseMessage],
     user_id: str,
@@ -204,17 +201,14 @@ def _memory_search_hook(
     if not agentcore_memory_enabled or not memory_store:
         logger.debug("Memory search disabled")
         return messages
-
     if not messages:
         logger.debug("No messages to enrich")
         return messages
-
     try:
         # Get context retrieval config
         context_config = agentcore_memory_config.get('context_retrieval', {})
         top_k_relevant = context_config.get('top_k_relevant', 3)
         keep_recent = context_config.get('keep_recent_messages', 3)
-
         # Extract the latest user question for semantic search
         user_question = None
         for msg in reversed(messages):
@@ -256,10 +250,8 @@ def _memory_search_hook(
             if len(messages) > keep_recent
             else messages
         )
-
         # Build enriched messages
         enriched_messages = []
-
         # Add relevant context as system message
         if relevant_context:
             context_summary = "## Relevant Context from Previous Conversations:\n\n"
@@ -270,21 +262,16 @@ def _memory_search_hook(
                     else str(ctx)
                 )
                 context_summary += f"### Context {i}:\n{ctx_str}\n\n"
-
             enriched_messages.append(SystemMessage(content=context_summary))
             print(f"🧠 [MEMORY SEARCH] Retrieved {len(relevant_context)} relevant items")
-
         # Add recent messages
         enriched_messages.extend(recent_messages)
-
         logger.info(f"Enriched: {len(messages)} → {len(enriched_messages)} messages")
         return enriched_messages
-
     except Exception as e:
         logger.error(f"Memory search error: {e}", exc_info=True)
         print(f"⚠️  [MEMORY SEARCH] Error: {e}")
         return messages
-
 
 def _memory_store_hook(
     user_id: str,
@@ -548,12 +535,10 @@ def select_platform(
         print(f"✅ [PLATFORM] Using previously selected platform: {existing_platform}")
         logger.info(f"Platform already selected: {existing_platform}")
         return state
-
     # Prompt user for platform selection
     print("\n🔍 [PLATFORM SELECTION] Please select your observability platform:")
     print("   1. LangSmith")
     print("   2. Langfuse")
-
     while True:
         choice = input("\nEnter your choice (1 or 2): ").strip()
 
@@ -570,19 +555,17 @@ def select_platform(
         else:
             print("❌ Invalid choice. Please enter 1 or 2.")
 
-    # Store platform in state
+    # Store platform in state that will be used across the agent execution process
     state["platform"] = selected_platform
-
     return state
 
 
 @traceable
-def get_insights(
+async def get_insights(
     state: UnifiedAgentState
 ) -> UnifiedAgentState:
     """
     Answer user question with conversation memory and platform-specific agent.
-
     This node:
     1. Determines which observability platform to use (LangSmith or Langfuse)
     2. Dynamically creates the appropriate insights agent with platform-specific tools
@@ -629,11 +612,10 @@ def get_insights(
             logger.warning(f"Unknown platform {platform}, defaulting to {DEFAULT_PLATFORM}")
             platform_enum = ObservabilityPlatform.LANGSMITH
 
-        # Create the agent using the factory
-        insights_agent = insights_agent_factory.create_insights_agent(platform=platform_enum)
+        # Create the agent using the factory (async operation)
+        insights_agent = await insights_agent_factory.create_insights_agent(platform=platform_enum)
         logger.info(f"✅ Created {platform} insights agent successfully")
         print(f"✅ [AGENT FACTORY] {platform.capitalize()} insights agent ready")
-
         # PRE-MODEL HOOK: Search memory for relevant context
         messages_to_send = _memory_search_hook(
             messages=list(existing_messages),
@@ -661,10 +643,10 @@ def get_insights(
         print("\n" + "="*80)
         print("AGENT RESPONSE (streaming):")
         print("="*80 + "\n")
-        
-        # Invoke the insights agent with full conversation context
-        response = insights_agent.stream(
-            {"messages": messages_to_send}, 
+
+        # Invoke the insights agent with full conversation context (async)
+        response = insights_agent.astream(
+            {"messages": messages_to_send},
             stream_mode=["updates", "messages"]
         )
         
@@ -672,9 +654,9 @@ def get_insights(
         all_response_messages = []
         final_ai_message = None
         current_message_content = ""
-        
-        # Iterate through the stream
-        for stream_mode, chunk in response:
+
+        # Iterate through the async stream
+        async for stream_mode, chunk in response:
             logger.debug(f"Stream mode: {stream_mode}, Chunk type: {type(chunk)}")
             
             # Handle updates mode (agent steps) - this contains the complete state after each step
@@ -1019,7 +1001,7 @@ def _build_graph() -> StateGraph:
 # Build the graph
 app = _build_graph()
 
-def run_agent(
+async def run_agent(
     user_question: str,
     session_id: Optional[str] = None,
     thread_id: str = "default"
@@ -1059,7 +1041,7 @@ def run_agent(
         "recursion_limit": 50
     }
 
-    result = app.invoke(initial_state, config=config)
+    result = await app.ainvoke(initial_state, config=config)
 
     return {
         "question": result["user_question"],
@@ -1213,10 +1195,13 @@ def _run_interactive_session(
             print("\nAgent: Analyzing...")
 
             try:
-                result = run_agent(
-                    user_question=user_input,
-                    session_id=session_id,
-                    thread_id=thread_id
+                # Run the async agent using asyncio
+                result = asyncio.run(
+                    run_agent(
+                        user_question=user_input,
+                        session_id=session_id,
+                        thread_id=thread_id
+                    )
                 )
 
                 # Store in conversation history

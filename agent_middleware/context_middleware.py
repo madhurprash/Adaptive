@@ -344,7 +344,7 @@ class TokenLimitCheckMiddleware(AgentMiddleware):
                 logger.warning(f"Could not count tokens precisely, using estimate: {e}")
                 # Fallback estimation
                 token_count = sum(len(str(msg.content)) for msg in messages) // 4
-            
+
             print(f"[TokenLimitCheckMiddleware] Current input token count: {token_count}")
 
             # Check if we exceed threshold
@@ -353,7 +353,7 @@ class TokenLimitCheckMiddleware(AgentMiddleware):
                     f"[TokenLimitCheckMiddleware] Token count ({token_count}) "
                     f"exceeds threshold ({self.token_threshold})"
                 )
-                
+
                 # Summarize only the first X% of old messages
                 summarized_messages = self._summarize_messages(messages)
 
@@ -379,6 +379,75 @@ class TokenLimitCheckMiddleware(AgentMiddleware):
 
         # Call the model with potentially modified state
         return handler(request)
+
+    async def awrap_model_call(
+        self,
+        request: Any,
+        handler: Any,
+    ) -> Any:
+        """
+        Asynchronous version of wrap_model_call.
+
+        Intercept async model call to check token count and summarize if needed.
+
+        Args:
+            request: ModelRequest containing state and runtime
+            handler: Async callback to execute the model
+
+        Returns:
+            ModelResponse from handler
+        """
+        # Access messages from request state
+        state = request.state
+        messages = state.get("messages", [])
+
+        if not messages:
+            print("No messages to check")
+            return await handler(request)
+
+        try:
+            # Count input tokens
+            try:
+                token_count = self.model.get_num_tokens_from_messages(messages)
+            except Exception as e:
+                logger.warning(f"Could not count tokens precisely, using estimate: {e}")
+                # Fallback estimation
+                token_count = sum(len(str(msg.content)) for msg in messages) // 4
+
+            print(f"[TokenLimitCheckMiddleware] Current input token count: {token_count}")
+
+            # Check if we exceed threshold
+            if token_count > self.token_threshold:
+                print(
+                    f"[TokenLimitCheckMiddleware] Token count ({token_count}) "
+                    f"exceeds threshold ({self.token_threshold})"
+                )
+
+                # Summarize only the first X% of old messages
+                summarized_messages = self._summarize_messages(messages)
+
+                # Update state with modified messages
+                state["messages"] = summarized_messages
+
+                # Verify new token count
+                try:
+                    new_token_count = self.model.get_num_tokens_from_messages(summarized_messages)
+                    print(
+                        f"[TokenLimitCheckMiddleware] Reduced token count "
+                        f"from {token_count} to {new_token_count}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not verify new token count: {e}")
+            else:
+                print(f"[TokenLimitCheckMiddleware] Token count within threshold. Proceeding normally.")
+
+        except Exception as e:
+            print(f"[TokenLimitCheckMiddleware] Could not check token count: {e}")
+            logger.error(f"Token counting error: {e}", exc_info=True)
+            # If token counting fails, proceed without modification
+
+        # Call the model with potentially modified state (async)
+        return await handler(request)
 
 # Global storage for full tool responses (could be replaced with S3/DynamoDB)
 _TOOL_RESPONSE_STORAGE = {}
@@ -639,11 +708,9 @@ def create_tool_response_summarizer(
 class PruneToolCallMiddleware(AgentMiddleware):
     """
     Custom middleware that prunes verbose tool responses to essential fields only.
-    
     This middleware reduces token usage by filtering out unnecessary metadata from
     tool responses, especially useful for LangSmith tools that return verbose data.
     """
-    
     def __init__(
         self,
         tools_to_prune: Optional[List[str]] = None,
@@ -813,39 +880,39 @@ class PruneToolCallMiddleware(AgentMiddleware):
     ) -> Any:
         """
         Intercept tool calls to prune verbose responses.
-        
+
         This method:
         1. Executes the tool via handler
         2. Checks if the tool should be pruned
         3. Extracts only essential fields from the response
         4. Logs the token savings
         5. Returns the pruned response
-        
+
         Args:
             request: ToolCallRequest containing tool call information
             handler: Callback to execute the tool
-            
+
         Returns:
             ToolMessage with pruned content or original response
         """
         # Execute the tool
         result = handler(request)
-        
+
         # Check if result is a ToolMessage
         if not isinstance(result, ToolMessage):
             logger.debug(f"Result is not a ToolMessage, returning as-is")
             return result
-        
+
         tool_name = getattr(result, 'name', 'unknown_tool')
-        
+
         # Check if this tool should be pruned
         if not self._should_prune_tool(tool_name):
             logger.debug(f"Tool '{tool_name}' not in prune list, returning original response")
             return result
-        
+
         content = result.content
         original_length = len(content)
-        
+
         try:
             # Try to parse as JSON
             try:
@@ -855,27 +922,27 @@ class PruneToolCallMiddleware(AgentMiddleware):
                 # Not JSON, treat as plain text
                 data = content
                 is_json = False
-            
+
             if is_json:
                 # Extract essential fields
                 pruned_data = self._extract_essential_fields(data, tool_name)
-                
+
                 # Convert back to JSON string
                 pruned_content = json.dumps(pruned_data, indent=2)
                 pruned_length = len(pruned_content)
-                
+
                 # Calculate savings
                 reduction_percent = (
-                    ((original_length - pruned_length) / original_length * 100) 
+                    ((original_length - pruned_length) / original_length * 100)
                     if original_length > 0 else 0
                 )
-                
+
                 logger.info(
                     f"Pruned tool '{tool_name}' response: "
                     f"{original_length} chars → {pruned_length} chars "
                     f"({reduction_percent:.1f}% reduction)"
                 )
-                
+
                 print(
                     f"[PRUNE_TOOL_CALL] Tool: {tool_name}\n"
                     f"  Original: {original_length:,} chars\n"
@@ -883,7 +950,7 @@ class PruneToolCallMiddleware(AgentMiddleware):
                     f"  Reduction: {reduction_percent:.1f}%\n"
                     f"  Estimated token savings: ~{(original_length - pruned_length) // 4:,} tokens"
                 )
-                
+
                 # Create new ToolMessage with pruned content
                 return ToolMessage(
                     content=pruned_content,
@@ -899,13 +966,13 @@ class PruneToolCallMiddleware(AgentMiddleware):
                         f"Truncated non-JSON tool '{tool_name}' response: "
                         f"{original_length} chars → {len(pruned_content)} chars"
                     )
-                    
+
                     print(
                         f"[PRUNE_TOOL_CALL] Tool: {tool_name}\n"
                         f"  Original: {original_length:,} chars\n"
                         f"  Truncated to: {len(pruned_content):,} chars"
                     )
-                    
+
                     return ToolMessage(
                         content=pruned_content,
                         tool_call_id=result.tool_call_id,
@@ -916,7 +983,126 @@ class PruneToolCallMiddleware(AgentMiddleware):
                     # Content is short enough, return as-is
                     logger.debug(f"Tool '{tool_name}' response is short enough, no pruning needed")
                     return result
-        
+
+        except Exception as e:
+            logger.error(f"Error pruning tool response from '{tool_name}': {e}", exc_info=True)
+            # If pruning fails, return original response
+            logger.warning(f"Pruning failed for tool '{tool_name}', returning original response")
+            return result
+
+    async def awrap_tool_call(
+        self,
+        request: Any,
+        handler,
+    ) -> Any:
+        """
+        Asynchronous version of wrap_tool_call.
+
+        Intercept async tool calls to prune verbose responses.
+
+        This method:
+        1. Executes the tool via handler (async)
+        2. Checks if the tool should be pruned
+        3. Extracts only essential fields from the response
+        4. Logs the token savings
+        5. Returns the pruned response
+
+        Args:
+            request: ToolCallRequest containing tool call information
+            handler: Async callback to execute the tool
+
+        Returns:
+            ToolMessage with pruned content or original response
+        """
+        # Execute the tool (async)
+        result = await handler(request)
+
+        # Check if result is a ToolMessage
+        if not isinstance(result, ToolMessage):
+            logger.debug(f"Result is not a ToolMessage, returning as-is")
+            return result
+
+        tool_name = getattr(result, 'name', 'unknown_tool')
+
+        # Check if this tool should be pruned
+        if not self._should_prune_tool(tool_name):
+            logger.debug(f"Tool '{tool_name}' not in prune list, returning original response")
+            return result
+
+        content = result.content
+        original_length = len(content)
+
+        try:
+            # Try to parse as JSON
+            try:
+                data = json.loads(content)
+                is_json = True
+            except (json.JSONDecodeError, TypeError):
+                # Not JSON, treat as plain text
+                data = content
+                is_json = False
+
+            if is_json:
+                # Extract essential fields
+                pruned_data = self._extract_essential_fields(data, tool_name)
+
+                # Convert back to JSON string
+                pruned_content = json.dumps(pruned_data, indent=2)
+                pruned_length = len(pruned_content)
+
+                # Calculate savings
+                reduction_percent = (
+                    ((original_length - pruned_length) / original_length * 100)
+                    if original_length > 0 else 0
+                )
+
+                logger.info(
+                    f"Pruned tool '{tool_name}' response: "
+                    f"{original_length} chars → {pruned_length} chars "
+                    f"({reduction_percent:.1f}% reduction)"
+                )
+
+                print(
+                    f"[PRUNE_TOOL_CALL] Tool: {tool_name}\n"
+                    f"  Original: {original_length:,} chars\n"
+                    f"  Pruned: {pruned_length:,} chars\n"
+                    f"  Reduction: {reduction_percent:.1f}%\n"
+                    f"  Estimated token savings: ~{(original_length - pruned_length) // 4:,} tokens"
+                )
+
+                # Create new ToolMessage with pruned content
+                return ToolMessage(
+                    content=pruned_content,
+                    tool_call_id=result.tool_call_id,
+                    name=tool_name,
+                    id=result.id,
+                )
+            else:
+                # For non-JSON content, apply simple truncation
+                if original_length > 1000:
+                    pruned_content = content
+                    logger.info(
+                        f"Truncated non-JSON tool '{tool_name}' response: "
+                        f"{original_length} chars → {len(pruned_content)} chars"
+                    )
+
+                    print(
+                        f"[PRUNE_TOOL_CALL] Tool: {tool_name}\n"
+                        f"  Original: {original_length:,} chars\n"
+                        f"  Truncated to: {len(pruned_content):,} chars"
+                    )
+
+                    return ToolMessage(
+                        content=pruned_content,
+                        tool_call_id=result.tool_call_id,
+                        name=tool_name,
+                        id=result.id,
+                    )
+                else:
+                    # Content is short enough, return as-is
+                    logger.debug(f"Tool '{tool_name}' response is short enough, no pruning needed")
+                    return result
+
         except Exception as e:
             logger.error(f"Error pruning tool response from '{tool_name}': {e}", exc_info=True)
             # If pruning fails, return original response

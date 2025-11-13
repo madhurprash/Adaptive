@@ -2,7 +2,8 @@
 Insights Agents Factory with MCP Tool Integration
 
 This module provides platform-specific insights agents (LangSmith, Langfuse)
-that connect to their respective MCP servers for observability tool access.
+that connect to their respective MCP servers for observability tool access
+using the langchain-mcp-adapters library.
 
 The factory pattern allows the main evolve_agents.py to dynamically select
 the appropriate agent based on the observability platform being used.
@@ -15,9 +16,7 @@ import logging
 from enum import Enum
 from langchain_core.tools import Tool
 from langchain.agents import create_agent
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from langchain_mcp_adapters.tools import load_mcp_tools
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from typing import Dict, List, Optional, Any
 from langchain_aws import ChatBedrockConverse
 
@@ -33,10 +32,8 @@ from langchain.agents.middleware import (
     SummarizationMiddleware,
     TodoListMiddleware,
 )
-
-from utils import load_system_prompt, load_config
 from constants import *
-
+from utils import load_system_prompt, load_config
 
 # Configure logging
 logging.basicConfig(
@@ -45,12 +42,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 class ObservabilityPlatform(Enum):
     """Supported observability platforms."""
     LANGSMITH = "langsmith"
     LANGFUSE = "langfuse"
-
 
 class InsightsAgentFactory:
     """
@@ -81,6 +76,9 @@ class InsightsAgentFactory:
         self.context_engineering_info = self.config_data.get('context_engineering_info', {})
         self.insights_agent_config = self.config_data.get('insights_agent_model_information', {})
 
+        # Store MCP client reference to keep it alive
+        self._mcp_client = None
+
         # Initialize middleware components
         self._initialize_middleware()
 
@@ -108,7 +106,6 @@ class InsightsAgentFactory:
                 logger.info(f"Loaded custom summarization prompt from: {summary_prompt_path}")
             except Exception as e:
                 logger.warning(f"Could not load summary prompt: {e}, using default")
-
         # Create middleware components
         middleware_params = {
             "model": self.summarization_llm,
@@ -125,7 +122,6 @@ class InsightsAgentFactory:
             max_error_length=500,
             max_input_length=200
         )
-
         logger.info("Middleware stack initialized successfully")
 
     def _create_insights_llm(self) -> ChatBedrockConverse:
@@ -174,60 +170,21 @@ class InsightsAgentFactory:
         except Exception as e:
             logger.error(f"Error loading prompt from {prompt_path}: {e}")
 
-    def _wrap_async_tool_for_sync(self, tool: Tool) -> Tool:
-        """
-        Wrap an async-only tool to support both sync and async invocation.
-
-        Args:
-            tool: The async-only tool
-
-        Returns:
-            Tool that supports both sync and async invocation
-        """
-        from langchain_core.tools import StructuredTool
-
-        # Create sync wrapper that runs async function in event loop
-        # Accept both positional and keyword arguments to handle different invocation patterns
-        def sync_wrapper(*args, **kwargs) -> Any:
-            # If called with positional args, use first arg as input
-            if args:
-                input_data = args[0]
-            # Otherwise, use kwargs as input
-            else:
-                input_data = kwargs
-            return asyncio.run(tool.ainvoke(input_data))
-
-        # Create async wrapper that delegates to original
-        async def async_wrapper(*args, **kwargs) -> Any:
-            # If called with positional args, use first arg as input
-            if args:
-                input_data = args[0]
-            # Otherwise, use kwargs as input
-            else:
-                input_data = kwargs
-            return await tool.ainvoke(input_data)
-
-        # Return new tool with both sync and async support
-        return StructuredTool(
-            name=tool.name,
-            description=tool.description,
-            func=sync_wrapper,
-            coroutine=async_wrapper,
-            args_schema=tool.args_schema if hasattr(tool, 'args_schema') else None,
-        )
 
     async def _create_mcp_tools(
         self,
         platform: ObservabilityPlatform,
     ) -> List[Tool]:
         """
-        Create tools from MCP server for the specified platform.
+        Create tools from MCP server for the specified platform using MultiServerMCPClient.
+
+        IMPORTANT: This method keeps the MCP client alive by storing it in _mcp_client.
 
         Args:
             platform: Observability platform
 
         Returns:
-            List of LangChain tools with both sync and async support
+            List of LangChain tools
         """
         logger.info(f"Creating MCP tools for {platform.value}...")
 
@@ -235,41 +192,36 @@ class InsightsAgentFactory:
             # Determine MCP server script path based on platform using constants
             if platform == ObservabilityPlatform.LANGSMITH:
                 server_script = LANGSMITH_MCP_SERVER_PATH
+                server_name = "langsmith"
             elif platform == ObservabilityPlatform.LANGFUSE:
                 server_script = LANGFUSE_MCP_SERVER_PATH
+                server_name = "langfuse"
             else:
                 raise ValueError(f"Unsupported platform: {platform}")
 
             logger.info(f"Connecting to MCP server: {server_script}")
 
-            # Create MCP server parameters
-            server_params = StdioServerParameters(
-                command=MCP_SERVER_COMMAND,
-                args=MCP_SERVER_BASE_ARGS + [server_script],
-                env=os.environ.copy(),
-            )
+            # Create MultiServerMCPClient with stdio transport
+            # Store client reference to keep connection alive
+            self._mcp_client = MultiServerMCPClient({
+                server_name: {
+                    "transport": "stdio",
+                    "command": MCP_SERVER_COMMAND,
+                    "args": MCP_SERVER_BASE_ARGS + [server_script],
+                }
+            })
 
-            # Create MCP client connection and load tools
-            # The load_mcp_tools function starts the MCP server as a subprocess
-            # and returns tools that can be used by the agent
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    # Load MCP tools (these are async-only by default)
-                    mcp_tools = await load_mcp_tools(session)
+            # Get tools from the MCP client
+            mcp_tools = await self._mcp_client.get_tools()
 
             logger.info(f"Successfully created {len(mcp_tools)} MCP tools from {platform.value} server")
-
-            # Wrap tools to support both sync and async invocation
-            wrapped_tools = [self._wrap_async_tool_for_sync(tool) for tool in mcp_tools]
-            logger.info(f"Wrapped {len(wrapped_tools)} tools for sync/async compatibility")
+            logger.info(f"MCP client kept alive for agent lifetime")
 
             # Log tool names for debugging
-            tool_names = [tool.name for tool in wrapped_tools]
+            tool_names = [tool.name for tool in mcp_tools]
             logger.info(f"Available tools: {', '.join(tool_names)}")
 
-            return wrapped_tools
-
+            return mcp_tools
         except Exception as e:
             logger.error(f"Error creating MCP tools for {platform.value}: {e}", exc_info=True)
             raise RuntimeError(
@@ -277,7 +229,7 @@ class InsightsAgentFactory:
                 f"Ensure the MCP server is properly configured. Error: {e}"
             )
 
-    def create_insights_agent(
+    async def create_insights_agent(
         self,
         platform: ObservabilityPlatform,
     ):
@@ -299,7 +251,7 @@ class InsightsAgentFactory:
         system_prompt = self._load_platform_prompt(platform)
 
         # Create MCP tools (async operation)
-        mcp_tools = asyncio.run(self._create_mcp_tools(platform))
+        mcp_tools = await self._create_mcp_tools(platform)
 
         # Initialize platform-specific middleware (token limit check needs LLM)
         token_limit_middleware = TokenLimitCheckMiddleware(
@@ -308,14 +260,12 @@ class InsightsAgentFactory:
             token_threshold=self.context_engineering_info.get('token_threshold', 100000),
             summary_prompt=self.summary_prompt_text,
         )
-
         tool_summarizer_middleware = tool_response_summarizer(
             summarization_llm=self.summarization_llm,
             token_threshold=self.context_engineering_info.get('token_threshold', 100000),
             store_full_responses=True,
             summary_prompt=self.summary_prompt_text,
         )
-
         # Build complete middleware stack
         middleware_stack = [
             token_limit_middleware,
@@ -324,28 +274,42 @@ class InsightsAgentFactory:
             self.conversation_summarization_middleware,
             self.prune_middleware,
         ]
-
         # Create the agent
         logger.info(f"Building {platform.value} insights agent with {len(mcp_tools)} tools and {len(middleware_stack)} middleware...")
-
         insights_agent = create_agent(
             model=insights_llm,
             tools=mcp_tools,
             system_prompt=system_prompt,
             middleware=middleware_stack,
         )
-
         logger.info(
             f"✅ Created {platform.value} insights agent successfully!\n"
             f"   - Tools: {len(mcp_tools)}\n"
             f"   - Middleware: {len(middleware_stack)}\n"
             f"   - Model: {self.insights_agent_config.get('model_id')}"
         )
-
         return insights_agent
 
+    async def cleanup(self) -> None:
+        """
+        Clean up MCP client resources.
 
-def create_insights_agent_for_platform(
+        Call this method when done using the agent to properly close
+        the MCP server connection.
+        """
+        logger.info("Cleaning up MCP client resources...")
+        try:
+            if self._mcp_client:
+                await self._mcp_client.close()
+                logger.info("Closed MCP client connection")
+        except Exception as e:
+            logger.warning(f"Error during cleanup: {e}")
+        finally:
+            self._mcp_client = None
+            logger.info("✅ Cleanup complete")
+
+
+async def create_insights_agent_for_platform(
     platform: str,
     config_file_path: str = CONFIG_FILE_FPATH,
 ):
@@ -360,7 +324,7 @@ def create_insights_agent_for_platform(
         Configured insights agent
 
     Example:
-        >>> agent = create_insights_agent_for_platform("langsmith")
+        >>> agent = await create_insights_agent_for_platform("langsmith")
         >>> # Use agent with LangGraph...
     """
     # Parse platform string to enum
@@ -378,7 +342,7 @@ def create_insights_agent_for_platform(
 
     # Create factory and agent
     factory = InsightsAgentFactory(config_file_path=config_file_path)
-    return factory.create_insights_agent(platform=platform_enum)
+    return await factory.create_insights_agent(platform=platform_enum)
 
 
 def get_platform_from_config(
@@ -396,8 +360,8 @@ def get_platform_from_config(
     config_data = load_config(config_file_path)
 
     # Check for explicit platform configuration
-    insights_config = config_data.get('insights_agent_model_information', {})
-    platform = insights_config.get('observability_platform', 'langsmith').lower()
+    insights_config = config_data.get('insights_agent_model_information')
+    platform = insights_config.get('observability_platform').lower()
 
     logger.info(f"Using observability platform from config: {platform}")
     return platform
@@ -406,7 +370,6 @@ def get_platform_from_config(
 def get_platform_from_env() -> str:
     """
     Determine platform from environment variables.
-
     Checks for:
     - OBSERVABILITY_PLATFORM env var
     - LANGSMITH_API_KEY presence -> langsmith
@@ -435,7 +398,7 @@ def get_platform_from_env() -> str:
     return "langsmith"
 
 
-def create_insights_agent_auto(
+async def create_insights_agent_auto(
     config_file_path: str = CONFIG_FILE_FPATH,
     platform: Optional[str] = None,
 ):
@@ -458,10 +421,10 @@ def create_insights_agent_auto(
 
     Example:
         >>> # Auto-detect from config/env
-        >>> agent = create_insights_agent_auto()
+        >>> agent = await create_insights_agent_auto()
         >>>
         >>> # Explicit platform
-        >>> agent = create_insights_agent_auto(platform="langfuse")
+        >>> agent = await create_insights_agent_auto(platform="langfuse")
     """
     if platform:
         selected_platform = platform.lower()
@@ -479,7 +442,7 @@ def create_insights_agent_auto(
                 selected_platform = "langsmith"
 
     logger.info(f"🎯 Creating insights agent for platform: {selected_platform}")
-    return create_insights_agent_for_platform(
+    return await create_insights_agent_for_platform(
         platform=selected_platform,
         config_file_path=config_file_path,
     )
@@ -497,21 +460,26 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    try:
-        # Test auto-detection
-        logger.info("Testing auto-detection...")
-        agent = create_insights_agent_auto(platform=args.platform)
-        logger.info("✅ Successfully created insights agent!")
+    async def main():
+        """Main async function for testing."""
+        try:
+            # Test auto-detection
+            logger.info("Testing auto-detection...")
+            agent = await create_insights_agent_auto(platform=args.platform)
+            logger.info("✅ Successfully created insights agent!")
 
-        # Print agent info
-        print("\n" + "="*80)
-        print("INSIGHTS AGENT CREATED SUCCESSFULLY")
-        print("="*80)
-        print(f"Platform: {args.platform or 'auto-detected'}")
-        print(f"Agent type: {type(agent).__name__}")
-        print("="*80 + "\n")
+            # Print agent info
+            print("\n" + "="*80)
+            print("INSIGHTS AGENT CREATED SUCCESSFULLY")
+            print("="*80)
+            print(f"Platform: {args.platform or 'auto-detected'}")
+            print(f"Agent type: {type(agent).__name__}")
+            print("="*80 + "\n")
 
-    except Exception as e:
-        logger.error(f"❌ Failed to create insights agent: {e}", exc_info=True)
-        import sys
-        sys.exit(1)
+        except Exception as e:
+            logger.error(f"❌ Failed to create insights agent: {e}", exc_info=True)
+            import sys
+            sys.exit(1)
+
+    # Run the async main function
+    asyncio.run(main())
