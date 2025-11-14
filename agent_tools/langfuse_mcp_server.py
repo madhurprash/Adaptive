@@ -132,9 +132,28 @@ async def list_traces(
     session_id: Optional[str] = None,
     from_timestamp: Optional[str] = None,
     to_timestamp: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    version: Optional[str] = None,
+    release: Optional[str] = None,
+    environment: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
     List traces with optional filtering and pagination.
+
+    Each trace contains:
+    - Timestamp: When the trace was created (ISO 8601 format)
+    - Name: The trace name (e.g., "LangGraph")
+    - Input: The user's input/query to the system
+    - Output: The system's response/output
+    - Observation counts by level (ERROR, WARNING, INFO, DEBUG)
+    - Latency: Total execution time in milliseconds
+    - Token usage: Input tokens, output tokens, and total tokens
+    - Cost: Input cost, output cost, and total cost
+    - Metadata: Custom metadata attached to the trace
+    - Session ID: Associated session identifier
+    - User ID: User who triggered the trace
+    - Tags: Associated tags for categorization
+    - Version/Release/Environment: Deployment context
 
     Args:
         page: Page number for pagination (default: 1)
@@ -144,9 +163,13 @@ async def list_traces(
         session_id: Filter by session ID
         from_timestamp: Filter traces after this timestamp (ISO 8601)
         to_timestamp: Filter traces before this timestamp (ISO 8601)
+        tags: Filter by tags (only traces that include all of these tags)
+        version: Filter by version
+        release: Filter by release
+        environment: Filter by environment (list of environment values)
 
     Returns:
-        Dictionary with 'data' (list of traces) and 'meta' (pagination info)
+        Dictionary with 'data' (list of traces with all fields above) and 'meta' (pagination info)
     """
     try:
         logger.info("Listing traces...")
@@ -164,6 +187,14 @@ async def list_traces(
             params["fromTimestamp"] = from_timestamp
         if to_timestamp:
             params["toTimestamp"] = to_timestamp
+        if tags:
+            params["tags"] = tags
+        if version:
+            params["version"] = version
+        if release:
+            params["release"] = release
+        if environment:
+            params["environment"] = environment
 
         logger.debug(f"Fetching traces with params: {params}")
         return await _make_request("/api/public/traces", config, params=params)
@@ -175,13 +206,33 @@ async def list_traces(
 @mcp.tool()
 async def get_trace(trace_id: str) -> dict[str, Any]:
     """
-    Get detailed information about a specific trace.
+    Get detailed information about a specific trace including all observations.
+
+    Returns complete trace data with:
+    - Timestamp: Trace creation time
+    - Name: Trace identifier name
+    - Input: The original input/query
+    - Output: The final output/response
+    - Observations: All child observations (spans, events, generations) with their:
+        * Type (SPAN, EVENT, GENERATION)
+        * Level (ERROR, WARNING, INFO, DEBUG, DEFAULT)
+        * Input/Output for each observation
+        * Start/End times
+        * Latency per observation
+        * Token usage per generation
+        * Cost per generation
+    - Latency: Total trace execution time
+    - Token counts: Aggregated input/output/total tokens
+    - Cost breakdown: Input/output/total costs
+    - Metadata: Custom metadata fields
+    - Session/User context
+    - Tags, version, release, environment
 
     Args:
         trace_id: UUID of the trace
 
     Returns:
-        Dictionary containing trace details, observations, and metadata
+        Dictionary containing complete trace details with nested observations hierarchy
     """
     try:
         logger.info(f"Fetching trace: {trace_id}")
@@ -207,22 +258,51 @@ async def list_observations(
     observation_type: Optional[str] = None,
     from_start_time: Optional[str] = None,
     to_start_time: Optional[str] = None,
+    level: Optional[str] = None,
+    parent_observation_id: Optional[str] = None,
+    environment: Optional[list[str]] = None,
+    version: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     List observations (spans, events, generations) with filtering.
 
+    Observations are the building blocks within traces. Each observation contains:
+    - ID: Unique observation identifier
+    - Type: SPAN (nested execution context), EVENT (discrete event), GENERATION (LLM call)
+    - Level: ERROR (critical issues), WARNING (potential problems), INFO (informational), DEBUG (detailed debug info), DEFAULT (normal execution)
+    - Name: Observation name/identifier
+    - Input: Input data for this observation
+    - Output: Output data from this observation
+    - Start/End time: Timestamps for observation execution
+    - Latency: Duration in milliseconds
+    - Token usage: For GENERATION type - inputTokens, outputTokens, totalTokens
+    - Cost: For GENERATION type - inputCost, outputCost, totalCost
+    - Model: LLM model name for generations
+    - Metadata: Custom metadata fields
+    - Parent/Trace relationships: Links to parent observation and containing trace
+
+    Use the 'level' parameter to filter by observation severity:
+    - level="ERROR" to find failed operations and errors
+    - level="WARNING" to find potential issues
+    - level="INFO" for informational logs
+    - level="DEBUG" for detailed debugging information
+
     Args:
         page: Page number for pagination (default: 1)
         limit: Number of observations per page (default: 50, max: 100)
-        trace_id: Filter by trace ID
+        trace_id: Filter by trace ID to get observations for a specific trace
         name: Filter by observation name
         user_id: Filter by user ID
         observation_type: Filter by type (SPAN, EVENT, GENERATION)
         from_start_time: Filter observations after this time (ISO 8601)
         to_start_time: Filter observations before this time (ISO 8601)
+        level: Filter by level - "ERROR", "WARNING", "INFO", "DEBUG", "DEFAULT"
+        parent_observation_id: Filter by parent observation ID for nested observations
+        environment: Filter by environment (list of environment values)
+        version: Filter by observation version
 
     Returns:
-        Dictionary with 'data' (list of observations) and 'meta' (pagination info)
+        Dictionary with 'data' (list of observations with all details) and 'meta' (pagination info)
     """
     try:
         logger.info("Listing observations...")
@@ -242,6 +322,14 @@ async def list_observations(
             params["fromStartTime"] = from_start_time
         if to_start_time:
             params["toStartTime"] = to_start_time
+        if level:
+            params["level"] = level
+        if parent_observation_id:
+            params["parentObservationId"] = parent_observation_id
+        if environment:
+            params["environment"] = environment
+        if version:
+            params["version"] = version
 
         logger.debug(f"Fetching observations with params: {params}")
         return await _make_request("/api/public/observations", config, params=params)
@@ -255,11 +343,32 @@ async def get_observation(observation_id: str) -> dict[str, Any]:
     """
     Get detailed information about a specific observation.
 
+    Returns complete observation data including:
+    - ID and Type (SPAN, EVENT, GENERATION)
+    - Level (ERROR, WARNING, INFO, DEBUG, DEFAULT)
+    - Name: Observation identifier
+    - Input/Output: Complete input and output data
+    - Timestamps: Start time, end time, creation time
+    - Latency: Execution duration in milliseconds
+    - Parent observation ID and trace ID relationships
+    - For GENERATION observations specifically:
+        * Model name (e.g., "claude-3-sonnet", "gpt-4")
+        * Prompt tokens (input tokens)
+        * Completion tokens (output tokens)
+        * Total tokens
+        * Input cost ($ for input tokens)
+        * Output cost ($ for output tokens)
+        * Total cost
+        * Model parameters (temperature, max_tokens, etc.)
+    - Metadata: All custom metadata fields
+    - Status information
+    - Version/Environment context
+
     Args:
         observation_id: UUID of the observation
 
     Returns:
-        Dictionary containing observation details (type, input, output, metadata, etc.)
+        Dictionary containing complete observation details with token usage, costs, and timing
     """
     try:
         logger.info(f"Fetching observation: {observation_id}")
@@ -330,6 +439,7 @@ async def list_sessions(
     limit: int = DEFAULT_LIMIT,
     from_timestamp: Optional[str] = None,
     to_timestamp: Optional[str] = None,
+    environment: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
     List all sessions with optional time filtering.
@@ -339,6 +449,7 @@ async def list_sessions(
         limit: Number of sessions per page (default: 50, max: 100)
         from_timestamp: Filter sessions after this timestamp (ISO 8601)
         to_timestamp: Filter sessions before this timestamp (ISO 8601)
+        environment: Filter by environment (list of environment values)
 
     Returns:
         Dictionary with 'data' (list of sessions) and 'meta' (pagination info)
@@ -353,6 +464,8 @@ async def list_sessions(
             params["fromTimestamp"] = from_timestamp
         if to_timestamp:
             params["toTimestamp"] = to_timestamp
+        if environment:
+            params["environment"] = environment
 
         logger.debug(f"Fetching sessions with params: {params}")
         return await _make_request("/api/public/sessions", config, params=params)
@@ -395,6 +508,12 @@ async def list_scores(
     name: Optional[str] = None,
     from_timestamp: Optional[str] = None,
     to_timestamp: Optional[str] = None,
+    source: Optional[str] = None,
+    operator: Optional[str] = None,
+    value: Optional[float] = None,
+    score_ids: Optional[list[str]] = None,
+    config_id: Optional[str] = None,
+    data_type: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     List scores (evaluations and feedback) with filtering.
@@ -403,10 +522,16 @@ async def list_scores(
         page: Page number for pagination (default: 1)
         limit: Number of scores per page (default: 50, max: 100)
         trace_id: Filter by trace ID
-        user_id: Filter by user ID
+        user_id: Filter by user ID (associated to the trace)
         name: Filter by score name
         from_timestamp: Filter scores after this timestamp (ISO 8601)
         to_timestamp: Filter scores before this timestamp (ISO 8601)
+        source: Filter by source (e.g., "API", "EVAL")
+        operator: Filter by operator (e.g., ">=", "<=", "=", ">", "<")
+        value: Filter by score value (used with operator)
+        score_ids: Filter by list of score IDs
+        config_id: Filter by score config ID
+        data_type: Filter by data type (e.g., "NUMERIC", "CATEGORICAL", "BOOLEAN")
 
     Returns:
         Dictionary with 'data' (list of scores) and 'meta' (pagination info)
@@ -427,9 +552,21 @@ async def list_scores(
             params["fromTimestamp"] = from_timestamp
         if to_timestamp:
             params["toTimestamp"] = to_timestamp
+        if source:
+            params["source"] = source
+        if operator:
+            params["operator"] = operator
+        if value is not None:
+            params["value"] = value
+        if score_ids:
+            params["scoreIds"] = score_ids
+        if config_id:
+            params["configId"] = config_id
+        if data_type:
+            params["dataType"] = data_type
 
         logger.debug(f"Fetching scores with params: {params}")
-        return await _make_request("/api/public/scores", config, params=params)
+        return await _make_request("/api/public/v2/scores", config, params=params)
     except Exception as e:
         logger.error(f"Error listing scores: {e}")
         raise
@@ -449,7 +586,7 @@ async def get_score(score_id: str) -> dict[str, Any]:
     try:
         logger.info(f"Fetching score: {score_id}")
         config = LangfuseConfig.from_env()
-        return await _make_request(f"/api/public/scores/{score_id}", config)
+        return await _make_request(f"/api/public/v2/scores/{score_id}", config)
     except Exception as e:
         logger.error(f"Error fetching score {score_id}: {e}")
         raise
@@ -817,50 +954,56 @@ async def create_prompt(
 @mcp.tool()
 async def get_metrics(
     view: str = "traces",
-    metrics: Optional[list[dict[str, str]]] = None,
+    measure: str = "count",
+    aggregation: str = "count",
     from_timestamp: Optional[str] = None,
     to_timestamp: Optional[str] = None,
     trace_name: Optional[str] = None,
     user_id: Optional[str] = None,
-    dimensions: Optional[list[dict[str, str]]] = None,
+    group_by_field: Optional[str] = None,
     granularity: Optional[str] = None,
 ) -> dict[str, Any]:
     """
-    Get aggregated metrics for traces with optional filtering.
+    Get aggregated metrics for traces or observations.
 
-    This endpoint requires a complex query structure. By default, it returns
-    basic trace count metrics for the last 7 days.
+    Retrieves metrics like count, latency, token usage, or cost for traces/observations
+    with optional filtering and grouping.
 
     Args:
-        view: Data view to query. Options: "traces", "observations", "scores-numeric", "scores-categorical" (default: "traces")
-        metrics: List of metrics to compute. Each metric needs 'measure' and 'aggregation'.
-                 Example: [{"measure": "traces", "aggregation": "count"}]
-                 If not provided, defaults to trace count.
+        view: Data view to query. Options: "traces" (default), "observations", "scores-numeric", "scores-categorical"
+        measure: What to measure. Valid options: "count" (default), "latency", "value", "inputTokens", "outputTokens",
+                 "totalTokens", "inputCost", "outputCost", "totalCost"
+        aggregation: How to aggregate. Valid options: "count" (default), "sum", "avg", "p95", "histogram", "min", "max"
         from_timestamp: Start of time range (ISO 8601). Defaults to 7 days ago.
         to_timestamp: End of time range (ISO 8601). Defaults to now.
         trace_name: Filter by trace name
         user_id: Filter by user ID
-        dimensions: List of dimension fields to group by. Example: [{"field": "name"}]
-        granularity: Time dimension granularity. Options: "hour", "day", "week", "month"
+        group_by_field: Group results by a specific field. Valid fields for traces: "name", "userId", "metadata", "sessionId", "tags", "level"
+                       Valid fields for observations: "name", "userId", "metadata", "traceId", "traceName", "type", "model", "level"
+                       Note: "status" is NOT a valid grouping field in Langfuse API
+        granularity: Time bucket granularity. Options: "minute", "hour", "day", "week", "month", "auto"
 
     Returns:
-        Dictionary containing aggregated metrics based on the query
+        Dictionary containing aggregated metrics
 
-    Example:
+    Examples:
         # Get trace count for last 7 days
         get_metrics()
 
-        # Get trace count by name
-        get_metrics(dimensions=[{"field": "name"}])
+        # Get average trace latency
+        get_metrics(measure="latency", aggregation="avg")
 
-        # Get observation latency metrics
-        get_metrics(
-            view="observations",
-            metrics=[{"measure": "latency", "aggregation": "avg"}]
-        )
+        # Get observation count grouped by name
+        get_metrics(view="observations", group_by_field="name")
+
+        # Get cost metrics for a specific user
+        get_metrics(measure="totalCost", user_id="user-123")
+
+        # Get trace count grouped by trace name
+        get_metrics(view="traces", group_by_field="name")
     """
     try:
-        logger.info("Fetching metrics...")
+        logger.info(f"Fetching metrics: view={view}, measure={measure}, aggregation={aggregation}")
         config = LangfuseConfig.from_env()
 
         # Set default time range if not provided (last 7 days)
@@ -870,9 +1013,33 @@ async def get_metrics(
             from_dt = datetime.utcnow() - timedelta(days=7)
             from_timestamp = from_dt.isoformat() + "Z"
 
-        # Set default metrics if not provided
-        if not metrics:
-            metrics = [{"measure": "traces", "aggregation": "count"}]
+        # Validate measure
+        valid_measures = {"count", "latency", "value", "inputTokens", "outputTokens",
+                         "totalTokens", "inputCost", "outputCost", "totalCost"}
+        if measure not in valid_measures:
+            logger.warning(f"Invalid measure '{measure}'. Valid options: {valid_measures}. Using 'count' instead.")
+            measure = "count"
+
+        # Validate group_by_field based on view
+        valid_trace_dimensions = {"name", "userId", "metadata", "sessionId", "tags", "level"}
+        valid_observation_dimensions = {"name", "userId", "metadata", "traceId", "traceName", "type", "model", "level"}
+
+        if group_by_field:
+            if view == "traces" and group_by_field not in valid_trace_dimensions:
+                logger.warning(
+                    f"Invalid dimension '{group_by_field}' for traces view. "
+                    f"Valid options: {valid_trace_dimensions}. Removing dimension."
+                )
+                group_by_field = None
+            elif view == "observations" and group_by_field not in valid_observation_dimensions:
+                logger.warning(
+                    f"Invalid dimension '{group_by_field}' for observations view. "
+                    f"Valid options: {valid_observation_dimensions}. Removing dimension."
+                )
+                group_by_field = None
+
+        # Build the metrics list
+        metrics = [{"measure": measure, "aggregation": aggregation}]
 
         # Build the query object
         query: dict[str, Any] = {
@@ -882,9 +1049,9 @@ async def get_metrics(
             "toTimestamp": to_timestamp,
         }
 
-        # Add optional dimensions
-        if dimensions:
-            query["dimensions"] = dimensions
+        # Add optional grouping (dimensions)
+        if group_by_field:
+            query["dimensions"] = [{"field": group_by_field}]
 
         # Add optional time granularity
         if granularity:
@@ -919,6 +1086,18 @@ async def get_metrics(
             config,
             params={"query": query_json}
         )
+    except httpx.HTTPStatusError as e:
+        error_detail = ""
+        try:
+            error_detail = e.response.json() if e.response.content else str(e)
+        except Exception:
+            error_detail = str(e)
+        logger.error(f"HTTP error fetching metrics: {error_detail}")
+        raise ValueError(
+            f"Failed to fetch metrics from Langfuse API. "
+            f"Status: {e.response.status_code}. "
+            f"Details: {error_detail}"
+        ) from e
     except Exception as e:
         logger.error(f"Error fetching metrics: {e}")
         raise

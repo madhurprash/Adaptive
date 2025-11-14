@@ -1,0 +1,512 @@
+{
+  "trace_examination_questions": [
+    {
+      "category": "recent_traces",
+      "questions": [
+        "Show me all traces in the lambda-autotuner project",
+        "What are the most recent traces in lambda-autotuner?",
+        "Show me traces from the past hour in lambda-autotuner",
+        "List all traces created today in lambda-autotuner",
+        "What traces are in the lambda-autotuner project sorted by timestamp?"
+      ]
+    },
+    {
+      "category": "trace_details",
+      "questions": [
+        "Show me the details of trace ID xyz in lambda-autotuner",
+        "What happened in the trace at timestamp 2025-11-13 12:08:04?",
+        "Display the full trace hierarchy for this lambda-autotuner trace",
+        "What's the complete execution flow of trace ID abc?",
+        "Show me all the observations in this specific trace"
+      ]
+    },
+    {
+      "category": "trace_inputs_outputs",
+      "questions": [
+        "What was the input to this trace?",
+        "Show me the output of trace ID xyz",
+        "What query did the user submit in this trace?",
+        "Display the input and output for the most recent trace",
+        "What was the agent's response in this trace?"
+      ]
+    }
+  ],
+  "error_analysis_questions": [
+    {
+      "category": "error_identification",
+      "questions": [
+        "Show me all failed traces in lambda-autotuner",
+        "What traces have errors in the lambda-autotuner project?",
+        "List all error messages from lambda-autotuner traces",
+        "Which traces failed in the past 24 hours?",
+        "Show me traces with status 'ERROR'"
+      ]
+    },
+    {
+      "category": "error_investigation",
+      "questions": [
+        "Why did trace ID xyz fail?",
+        "What error occurred in this trace?",
+        "Show me the stack trace for this failed execution",
+        "What was the error message for trace abc?",
+        "Which observation caused the error in this trace?"
+      ]
+    },
+    {
+      "category": "error_patterns",
+      "questions": [
+        "What's the most common error in lambda-autotuner?",
+        "Are there any recurring error patterns?",
+        "Show me all traces that failed with the same error",
+        "Which error types appear most frequently?",
+        "Are errors increasing over time in lambda-autotuner?"
+      ]
+    },
+    {
+      "category": "error_context",
+      "questions": [
+        "What was the system doing before this error occurred?",
+        "Show me the inputs that caused this error",
+        "What observations succeeded before the failure?",
+        "What was different about traces that failed vs succeeded?",
+        "Show me the full context when this error happened"
+      ]
+    }
+  ],
+  "performance_debugging_questions": [
+    {
+      "category": "latency_issues",
+      "questions": [
+        "Show me traces with high latency in lambda-autotuner",
+        "Which trace took the longest to execute?",
+        "What's the slowest observation in this trace?",
+        "Why is this trace so slow?",
+        "Show me traces with latency over 10 seconds"
+      ]
+    },
+    {
+      "category": "execution_time_breakdown",
+      "questions": [
+        "How long did each observation take in this trace?",
+        "What's the time spent in each generation?",
+        "Show me the duration breakdown for trace ID xyz",
+        "Which step is the bottleneck in this trace?",
+        "Display execution time for each span in this trace"
+      ]
+    },
+    {
+      "category": "performance_comparison",
+      "questions": [
+        "Compare latency between successful and failed traces",
+        "Why is this trace slower than others?",
+        "Show me the fastest vs slowest traces today",
+        "What's different about the slow traces?",
+        "Has performance degraded for similar traces?"
+      ]
+    }
+  ],
+  "observation_level_questions": [
+    {
+      "category": "generation_analysis",
+      "questions": [
+        "Show me all LLM generations in this trace",
+        "What did the model generate in observation ID abc?",
+        "Display the prompt and completion for this generation",
+        "What tokens were used in this specific generation?",
+        "Show me the model's reasoning in this generation"
+      ]
+    },
+    {
+      "category": "span_analysis",
+      "questions": [
+        "What spans are in this trace?",
+        "Show me the details of span ID xyz",
+        "What happened during this specific span?",
+        "How long did this span take?",
+        "What observations are children of this span?"
+      ]
+    },
+    {
+      "category": "event_analysis",
+      "questions": [
+        "What events were logged in this trace?",
+        "Show me all event observations",
+        "What event caused this behavior?",
+        "Display the event details for observation ID abc",
+        "What was logged at this point in the trace?"
+      ]
+    },
+    {
+      "category": "observation_errors",
+      "questions": [
+        "Which observation failed in this trace?",
+        "Show me observations with error status",
+        "What went wrong in observation ID xyz?",
+        "Display the error details for this observation",
+        "What was the observation doing when it failed?"
+      ]
+    }
+  ],
+  "token_and_cost_questions": [
+    {
+      "category": "trace_level_costs",
+      "questions": [
+        "How much did this trace cost?",
+        "Show me the cost breakdown for trace ID xyz",
+        "What trace was the most expensive today?",
+        "Display token usage for this specific trace",
+        "How many tokens did this trace consume?"
+      ]
+    },
+    {
+      "category": "observation_level_costs",
+      "questions": [
+        "What's the cost of this specific generation?",
+        "Show me token counts for each observation in this trace",
+        "Which observation used the most tokens?",
+        "How much did observation ID abc cost?",
+        "Display input vs output tokens for this generation"
+      ]
+    },
+    {
+      "category": "cost_anomalies",
+      "questions": [
+        "Why is this trace so expensive?",
+        "Show me traces with unusually high token usage",
+        "What's causing high costs in this trace?",
+        "Which generation drove up the cost?",
+        "Are there any token usage anomalies?"
+      ]
+    }
+  ],
+  "model_behavior_questions": [
+    {
+      "category": "model_outputs",
+      "questions": [
+        "What did the model output in this trace?",
+        "Show me the model's response for this input",
+        "Display all model generations in this trace",
+        "What was the model thinking during this trace?",
+        "Show me the model's tool calls in this trace"
+      ]
+    },
+    {
+      "category": "model_performance",
+      "questions": [
+        "How well did the model perform on this trace?",
+        "Show me the quality score for this trace",
+        "Was the model's response correct?",
+        "Compare this trace's output to expected results",
+        "What's the evaluation score for this trace?"
+      ]
+    },
+    {
+      "category": "model_issues",
+      "questions": [
+        "Why did the model fail on this input?",
+        "Show me traces where the model produced bad outputs",
+        "What went wrong with the model generation?",
+        "Display model errors in this trace",
+        "Why is the model not following instructions in this trace?"
+      ]
+    }
+  ],
+  "tool_and_function_calls_questions": [
+    {
+      "category": "tool_execution",
+      "questions": [
+        "What tools were called in this trace?",
+        "Show me all tool invocations in trace ID xyz",
+        "Display the arguments passed to this tool call",
+        "What did this tool return?",
+        "How many times was this tool called in this trace?"
+      ]
+    },
+    {
+      "category": "tool_errors",
+      "questions": [
+        "Which tool call failed in this trace?",
+        "Why did this tool invocation fail?",
+        "Show me tool execution errors",
+        "What error did the tool return?",
+        "Display failed tool calls in lambda-autotuner traces"
+      ]
+    },
+    {
+      "category": "tool_performance",
+      "questions": [
+        "How long did this tool call take?",
+        "Show me the slowest tool executions",
+        "What's the latency of tool calls in this trace?",
+        "Which tool is causing performance issues?",
+        "Compare tool execution times across traces"
+      ]
+    }
+  ],
+  "metadata_and_context_questions": [
+    {
+      "category": "trace_metadata",
+      "questions": [
+        "What metadata is attached to this trace?",
+        "Show me the tags for trace ID xyz",
+        "What environment was this trace in?",
+        "Display all metadata fields for this trace",
+        "What version was running for this trace?"
+      ]
+    },
+    {
+      "category": "session_context",
+      "questions": [
+        "What session does this trace belong to?",
+        "Show me all traces in this session",
+        "What's the session ID for this trace?",
+        "Display the session history for this trace",
+        "What happened earlier in this session?"
+      ]
+    },
+    {
+      "category": "user_context",
+      "questions": [
+        "What user triggered this trace?",
+        "Show me all traces for user ID xyz",
+        "What's the user context for this trace?",
+        "Display the user ID and metadata",
+        "What other traces did this user have?"
+      ]
+    }
+  ],
+  "temporal_analysis_questions": [
+    {
+      "category": "timing_analysis",
+      "questions": [
+        "When did this trace start and end?",
+        "What's the timestamp of this error?",
+        "Show me traces between 12:00 PM and 1:00 PM",
+        "When was this observation executed?",
+        "Display the timeline of events in this trace"
+      ]
+    },
+    {
+      "category": "sequence_analysis",
+      "questions": [
+        "What happened before this observation?",
+        "Show me the sequence of operations in this trace",
+        "What was the execution order?",
+        "Display the chronological flow of this trace",
+        "What step came after this generation?"
+      ]
+    },
+    {
+      "category": "duration_analysis",
+      "questions": [
+        "How long did this trace take from start to finish?",
+        "What's the duration of each step?",
+        "Show me time gaps between observations",
+        "Where is time being spent in this trace?",
+        "What's the cumulative time for all generations?"
+      ]
+    }
+  ],
+  "comparison_and_debugging_questions": [
+    {
+      "category": "trace_comparison",
+      "questions": [
+        "Compare this failed trace to a similar successful one",
+        "What's different between trace A and trace B?",
+        "Show me side-by-side comparison of these two traces",
+        "Why did this trace succeed while the other failed?",
+        "What changed between these executions?"
+      ]
+    },
+    {
+      "category": "root_cause_debugging",
+      "questions": [
+        "What's the root cause of this error?",
+        "Walk me through why this trace failed",
+        "Show me the chain of events leading to this error",
+        "What triggered this failure?",
+        "Explain what went wrong step by step"
+      ]
+    },
+    {
+      "category": "data_flow_analysis",
+      "questions": [
+        "How did data flow through this trace?",
+        "What was passed between observations?",
+        "Show me the input/output chain in this trace",
+        "Where did this value come from?",
+        "How was this output generated?"
+      ]
+    }
+  ],
+  "specific_failure_scenarios": [
+    {
+      "category": "timeout_failures",
+      "questions": [
+        "Did this trace timeout?",
+        "Show me traces that exceeded time limits",
+        "Why did this trace take so long?",
+        "What observations timed out?",
+        "Display timeout errors in lambda-autotuner"
+      ]
+    },
+    {
+      "category": "validation_failures",
+      "questions": [
+        "Did input validation fail in this trace?",
+        "Show me validation errors",
+        "What input was rejected?",
+        "Why did schema validation fail?",
+        "Display validation error details"
+      ]
+    },
+    {
+      "category": "api_failures",
+      "questions": [
+        "Did an API call fail in this trace?",
+        "Show me external API errors",
+        "What API returned an error?",
+        "Why did the external service call fail?",
+        "Display API error responses in this trace"
+      ]
+    },
+    {
+      "category": "rate_limit_issues",
+      "questions": [
+        "Was this trace rate limited?",
+        "Show me traces that hit rate limits",
+        "Why was this request throttled?",
+        "Display rate limit errors",
+        "What traces were affected by rate limiting?"
+      ]
+    }
+  ],
+  "quality_and_evaluation_questions": [
+    {
+      "category": "output_quality",
+      "questions": [
+        "Is the output of this trace correct?",
+        "Show me the evaluation score for this trace",
+        "How does this output compare to expected results?",
+        "Was this trace marked as good or bad?",
+        "Display quality metrics for this trace"
+      ]
+    },
+    {
+      "category": "hallucination_detection",
+      "questions": [
+        "Did the model hallucinate in this trace?",
+        "Show me traces with potential hallucinations",
+        "Is the model's output factually correct?",
+        "Display traces marked as containing hallucinations",
+        "What outputs seem incorrect or fabricated?"
+      ]
+    },
+    {
+      "category": "score_analysis",
+      "questions": [
+        "What scores are attached to this trace?",
+        "Show me the evaluation breakdown",
+        "Why did this trace get a low score?",
+        "Display human feedback on this trace",
+        "What's the LLM-as-a-judge score for this trace?"
+      ]
+    }
+  ],
+  "natural_language_investigation": [
+    {
+      "category": "casual_debugging",
+      "questions": [
+        "What went wrong with this trace?",
+        "Why did this fail?",
+        "Something looks broken in this trace",
+        "Can you explain what happened here?",
+        "This trace looks weird, what's going on?",
+        "Help me understand this error",
+        "Walk me through this failed trace",
+        "What's the issue with this execution?",
+        "Why isn't this working?",
+        "What caused this to break?"
+      ]
+    },
+    {
+      "category": "detailed_investigation",
+      "questions": [
+        "Give me a detailed breakdown of what happened in this trace",
+        "Analyze this trace and tell me what went wrong",
+        "Help me debug trace ID xyz",
+        "Investigate why this specific trace failed",
+        "Explain the execution flow and where it broke",
+        "Show me everything about this error",
+        "What's the complete story of this failed trace?",
+        "Break down this trace step by step and find the issue",
+        "Analyze the performance problems in this trace",
+        "Help me understand why this trace behaved differently"
+      ]
+    }
+  ],
+  "aggregated_trace_insights": [
+    {
+      "category": "failure_patterns",
+      "questions": [
+        "What are the common failure patterns in lambda-autotuner?",
+        "Show me recurring errors across traces",
+        "Which traces fail with similar symptoms?",
+        "Are there patterns in failed vs successful traces?",
+        "What inputs consistently cause failures?"
+      ]
+    },
+    {
+      "category": "performance_patterns",
+      "questions": [
+        "Which types of traces are slowest?",
+        "Show me performance patterns across all traces",
+        "What traces consistently have high latency?",
+        "Are certain inputs causing performance issues?",
+        "What's the typical execution time for similar traces?"
+      ]
+    },
+    {
+      "category": "cost_patterns",
+      "questions": [
+        "What traces are consistently expensive?",
+        "Show me token usage patterns",
+        "Which types of inputs use the most tokens?",
+        "Are there cost anomalies I should investigate?",
+        "What traces have unusual cost characteristics?"
+      ]
+    }
+  ],
+  "real_world_debugging_scenarios": [
+    {
+      "category": "incident_investigation",
+      "questions": [
+        "A user reported an error at 2:30 PM - find that trace",
+        "Something went wrong with request ID xyz - show me details",
+        "Users are complaining about slow responses - which traces?",
+        "Find the trace that processed input 'optimize my lambda function'",
+        "A customer got a bad response - help me find and debug it"
+      ]
+    },
+    {
+      "category": "production_issues",
+      "questions": [
+        "Show me what happened during the outage at 3 PM",
+        "Find traces affected by the deployment 10 minutes ago",
+        "Why are traces failing after the recent update?",
+        "Something broke in the last hour - show me what",
+        "Compare traces before and after the incident"
+      ]
+    },
+    {
+      "category": "specific_error_hunt",
+      "questions": [
+        "Find the trace with error 'timeout waiting for response'",
+        "Show me all traces that failed with 429 errors",
+        "Which traces have the error message 'invalid configuration'?",
+        "Find traces that threw a specific exception",
+        "Show me traces with status code 500"
+      ]
+    }
+  ]
+}

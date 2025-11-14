@@ -151,24 +151,49 @@ class InsightsAgentFactory:
         platform: ObservabilityPlatform,
     ) -> str:
         """
-        Load the insights agent system prompt (same for all platforms).
-
-        Uses the framework-agnostic log_curator_base_prompt.txt for all platforms.
+        Load the platform-specific insights agent system prompt.
 
         Args:
-            platform: Observability platform
+            platform: Observability platform (LangSmith or Langfuse)
 
         Returns:
             System prompt string
+
+        Raises:
+            ValueError: If prompt configuration is missing or invalid
         """
-        # Use the same prompt for all platforms (framework-agnostic)
-        prompt_path = self.insights_agent_config.get('insights_agent_prompt')
+        # Get platform-specific prompts configuration
+        prompts_config = self.insights_agent_config.get('prompts', {})
+
+        # Map platform enum to config key
+        platform_key = platform.value  # "langsmith" or "langfuse"
+
+        # Get the prompt path for this platform
+        prompt_path = prompts_config.get(platform_key)
+
+        if not prompt_path:
+            # Fallback: try old single-prompt configuration for backwards compatibility
+            prompt_path = self.insights_agent_config.get('insights_agent_prompt')
+            if prompt_path:
+                logger.warning(
+                    f"Using legacy 'insights_agent_prompt' config. "
+                    f"Consider migrating to platform-specific 'prompts' config."
+                )
+            else:
+                raise ValueError(
+                    f"No prompt configured for platform '{platform_key}'. "
+                    f"Please add 'prompts.{platform_key}' to config.yaml"
+                )
+
         try:
             prompt = load_system_prompt(prompt_path)
-            logger.info(f"Loaded insights agent prompt from: {prompt_path} (framework-agnostic)")
+            logger.info(f"✅ Loaded {platform_key} insights agent prompt from: {prompt_path}")
             return prompt
         except Exception as e:
-            logger.error(f"Error loading prompt from {prompt_path}: {e}")
+            logger.error(f"❌ Error loading prompt from {prompt_path}: {e}")
+            raise ValueError(
+                f"Failed to load {platform_key} prompt from {prompt_path}: {e}"
+            ) from e
 
 
     async def _create_mcp_tools(
