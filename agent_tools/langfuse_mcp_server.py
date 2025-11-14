@@ -6,8 +6,10 @@ extracting insights, and monitoring performance metrics from Langfuse projects.
 """
 
 import os
+import json
 import logging
 import httpx
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -106,7 +108,11 @@ async def list_projects() -> list[dict[str, Any]]:
     try:
         logger.info("Listing all Langfuse projects...")
         config = LangfuseConfig.from_env()
-        return await _make_request("/api/public/projects", config)
+        response = await _make_request("/api/public/projects", config)
+        # Extract the 'data' field from the response if it exists
+        if isinstance(response, dict) and 'data' in response:
+            return response['data']
+        return response if isinstance(response, list) else []
     except Exception as e:
         logger.error(f"Error listing projects: {e}")
         raise
@@ -810,40 +816,109 @@ async def create_prompt(
 
 @mcp.tool()
 async def get_metrics(
-    trace_name: Optional[str] = None,
-    user_id: Optional[str] = None,
+    view: str = "traces",
+    metrics: Optional[list[dict[str, str]]] = None,
     from_timestamp: Optional[str] = None,
     to_timestamp: Optional[str] = None,
+    trace_name: Optional[str] = None,
+    user_id: Optional[str] = None,
+    dimensions: Optional[list[dict[str, str]]] = None,
+    granularity: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Get aggregated metrics for traces with optional filtering.
 
+    This endpoint requires a complex query structure. By default, it returns
+    basic trace count metrics for the last 7 days.
+
     Args:
+        view: Data view to query. Options: "traces", "observations", "scores-numeric", "scores-categorical" (default: "traces")
+        metrics: List of metrics to compute. Each metric needs 'measure' and 'aggregation'.
+                 Example: [{"measure": "traces", "aggregation": "count"}]
+                 If not provided, defaults to trace count.
+        from_timestamp: Start of time range (ISO 8601). Defaults to 7 days ago.
+        to_timestamp: End of time range (ISO 8601). Defaults to now.
         trace_name: Filter by trace name
         user_id: Filter by user ID
-        from_timestamp: Start of time range (ISO 8601)
-        to_timestamp: End of time range (ISO 8601)
+        dimensions: List of dimension fields to group by. Example: [{"field": "name"}]
+        granularity: Time dimension granularity. Options: "hour", "day", "week", "month"
 
     Returns:
-        Dictionary containing aggregated metrics (traces, observations, tokens, cost, latency)
+        Dictionary containing aggregated metrics based on the query
+
+    Example:
+        # Get trace count for last 7 days
+        get_metrics()
+
+        # Get trace count by name
+        get_metrics(dimensions=[{"field": "name"}])
+
+        # Get observation latency metrics
+        get_metrics(
+            view="observations",
+            metrics=[{"measure": "latency", "aggregation": "avg"}]
+        )
     """
     try:
         logger.info("Fetching metrics...")
         config = LangfuseConfig.from_env()
 
-        params: dict[str, Any] = {}
+        # Set default time range if not provided (last 7 days)
+        if not to_timestamp:
+            to_timestamp = datetime.utcnow().isoformat() + "Z"
+        if not from_timestamp:
+            from_dt = datetime.utcnow() - timedelta(days=7)
+            from_timestamp = from_dt.isoformat() + "Z"
 
+        # Set default metrics if not provided
+        if not metrics:
+            metrics = [{"measure": "traces", "aggregation": "count"}]
+
+        # Build the query object
+        query: dict[str, Any] = {
+            "view": view,
+            "metrics": metrics,
+            "fromTimestamp": from_timestamp,
+            "toTimestamp": to_timestamp,
+        }
+
+        # Add optional dimensions
+        if dimensions:
+            query["dimensions"] = dimensions
+
+        # Add optional time granularity
+        if granularity:
+            query["timeDimension"] = {"granularity": granularity}
+
+        # Add filters if provided
+        filters = []
         if trace_name:
-            params["traceName"] = trace_name
+            filters.append({
+                "column": "name",
+                "operator": "=",
+                "value": trace_name,
+                "type": "string"
+            })
         if user_id:
-            params["userId"] = user_id
-        if from_timestamp:
-            params["fromTimestamp"] = from_timestamp
-        if to_timestamp:
-            params["toTimestamp"] = to_timestamp
+            filters.append({
+                "column": "userId",
+                "operator": "=",
+                "value": user_id,
+                "type": "string"
+            })
 
-        logger.debug(f"Fetching metrics with params: {params}")
-        return await _make_request("/api/public/metrics", config, params=params)
+        if filters:
+            query["filters"] = filters
+
+        # Convert query to JSON string
+        query_json = json.dumps(query)
+
+        logger.debug(f"Fetching metrics with query: {query_json}")
+        return await _make_request(
+            "/api/public/metrics",
+            config,
+            params={"query": query_json}
+        )
     except Exception as e:
         logger.error(f"Error fetching metrics: {e}")
         raise

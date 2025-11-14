@@ -201,6 +201,23 @@ class InsightsAgentFactory:
 
             logger.info(f"Connecting to MCP server: {server_script}")
 
+            # Prepare environment variables for the MCP server subprocess
+            # The subprocess needs access to API keys from the parent environment
+            subprocess_env = {
+                # Langfuse credentials
+                "LANGFUSE_PUBLIC_KEY": os.getenv("LANGFUSE_PUBLIC_KEY", ""),
+                "LANGFUSE_SECRET_KEY": os.getenv("LANGFUSE_SECRET_KEY", ""),
+                "LANGFUSE_HOST": os.getenv("LANGFUSE_HOST", ""),
+                # LangSmith credentials
+                "LANGSMITH_API_KEY": os.getenv("LANGSMITH_API_KEY", ""),
+                "LANGSMITH_TRACING": os.getenv("LANGSMITH_TRACING", ""),
+                "LANGCHAIN_PROJECT": os.getenv("LANGCHAIN_PROJECT", ""),
+            }
+            # Remove empty values to avoid passing empty strings
+            subprocess_env = {k: v for k, v in subprocess_env.items() if v}
+
+            logger.info(f"Passing environment variables to MCP server: {list(subprocess_env.keys())}")
+
             # Create MultiServerMCPClient with stdio transport
             # Store client reference to keep connection alive
             self._mcp_client = MultiServerMCPClient({
@@ -208,6 +225,7 @@ class InsightsAgentFactory:
                     "transport": "stdio",
                     "command": MCP_SERVER_COMMAND,
                     "args": MCP_SERVER_BASE_ARGS + [server_script],
+                    "env": subprocess_env,
                 }
             })
 

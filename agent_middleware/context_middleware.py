@@ -646,27 +646,22 @@ def create_tool_response_summarizer(
             truncated = content[:500] + "\n...[truncated due to summarization failure]"
             return f"[TRUNCATED TOOL RESPONSE FROM: {tool_name}]\n{truncated}"
 
-    @wrap_tool_call
-    def tool_response_summarizer(request, handler):
+    def _process_tool_result(result: Any, tool_name: str) -> ToolMessage:
         """
-        Middleware to intercept and summarize large tool responses.
+        Helper function to process tool results (shared by sync and async versions).
 
-        This middleware:
-        1. Executes the tool via handler
-        2. Checks if response exceeds token threshold
-        3. Summarizes large responses using an LLM
-        4. Stores full responses if enabled
-        5. Returns summarized response
+        Args:
+            result: The tool result (ToolMessage)
+            tool_name: Name of the tool
+
+        Returns:
+            Processed ToolMessage (summarized or original)
         """
-        # Execute the tool
-        result = handler(request)
-
         # Check if result is a ToolMessage
         if not isinstance(result, ToolMessage):
             return result
 
         content = result.content
-        tool_name = getattr(result, 'name', 'unknown_tool')
 
         # Count tokens in the tool response using the same approach as TokenLimitCheckMiddleware
         try:
@@ -703,6 +698,54 @@ def create_tool_response_summarizer(
             # Return original if under threshold
             logger.debug(f"Tool '{tool_name}' response within threshold ({token_count} tokens)")
             return result
+
+    @wrap_tool_call
+    def tool_response_summarizer(request, handler):
+        """
+        Middleware to intercept and summarize large tool responses (sync version).
+
+        This middleware:
+        1. Executes the tool via handler
+        2. Checks if response exceeds token threshold
+        3. Summarizes large responses using an LLM
+        4. Stores full responses if enabled
+        5. Returns summarized response
+        """
+        # Execute the tool
+        result = handler(request)
+
+        # Get tool name
+        tool_name = getattr(result, 'name', 'unknown_tool') if isinstance(result, ToolMessage) else 'unknown_tool'
+
+        # Process the result
+        return _process_tool_result(result, tool_name)
+
+    # Add async version
+    tool_response_summarizer.awrap_tool_call = None  # Will be set below
+
+    async def async_tool_response_summarizer(request, handler):
+        """
+        Middleware to intercept and summarize large tool responses (async version).
+
+        This middleware:
+        1. Executes the tool via handler (async)
+        2. Checks if response exceeds token threshold
+        3. Summarizes large responses using an LLM
+        4. Stores full responses if enabled
+        5. Returns summarized response
+        """
+        # Execute the tool (async)
+        result = await handler(request)
+
+        # Get tool name
+        tool_name = getattr(result, 'name', 'unknown_tool') if isinstance(result, ToolMessage) else 'unknown_tool'
+
+        # Process the result (reuse sync logic)
+        return _process_tool_result(result, tool_name)
+
+    # Attach async version to the sync function
+    tool_response_summarizer.awrap_tool_call = async_tool_response_summarizer
+
     return tool_response_summarizer
 
 class PruneToolCallMiddleware(AgentMiddleware):
