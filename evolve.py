@@ -22,17 +22,13 @@ from constants import *
 from typing import Annotated
 from dotenv import load_dotenv
 from langsmith import traceable
-# Import Tavily for internet search
-from tavily import TavilyClient
 from typing_extensions import TypedDict
-from deepagents import create_deep_agent
 from typing import Any, Dict, List, Optional
 from langchain_aws import ChatBedrockConverse
 from langgraph.graph.message import add_messages
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
-from deepagents.backends import StateBackend, FilesystemBackend
 from langchain_core.messages import (
     HumanMessage,
     AIMessage,
@@ -45,6 +41,9 @@ from agent_tools.file_tools import *
 
 # Import insights agent factory for dynamic platform-based agent creation
 from insights.insights_agents import InsightsAgentFactory
+
+# Import the evolution agent factory that is used for offline evaluation and evolution
+from evolution.prompt_evolution import PromptOptimizationAgentFactory, OfflineOptimizationType
 
 # Load environment variables from .env file
 load_dotenv()
@@ -365,133 +364,20 @@ def _memory_store_hook(
 # based on the platform determined from the user's question.
 # The InsightsAgentFactory handles all middleware, LLM, and tool initialization.
 
-# ---------------- AGENT 2: INITIALIZE THE DEEP RESEARCH AGENT ----------------
+# ---------------- PROMPT EVOLUTION SYSTEM INITIALIZATION ----------------
 """
-The deep research agent performs comprehensive error analysis and internet research.
+The prompt evolution system analyzes insights from observability platforms
+and optimizes system prompts to improve agent performance.
 
-This agent:
-1. Analyzes error patterns from insights
-2. Performs internet research to find solutions
-3. Generates comprehensive markdown reports with actionable recommendations
-4. Writes results to files for review
-
-It combines error analysis with deep research capabilities in a single unified agent.
+This system:
+1. Analyzes agent performance patterns from insights
+2. Identifies areas for prompt improvement
+3. Optimizes system prompts based on observed behaviors
+4. Has file system access to read and modify prompts
 """
-
-# Initialize Tavily client for internet search
-logger.info("Initializing Tavily client for internet search...")
-tavily_api_key = os.getenv("TAVILY_API_KEY")
-if not tavily_api_key:
-    logger.warning("TAVILY_API_KEY environment variable not set. Internet search will not be available.")
-    tavily_client = None
-else:
-    tavily_client = TavilyClient(api_key=tavily_api_key)
-    logger.info("Tavily client initialized successfully")
-
-
-def _create_internet_search_tool(
-    tavily_client_instance: Optional[TavilyClient],
-    search_config: Dict[str, Any]
-):
-    """
-    Create internet search tool function configured from config file.
-
-    Args:
-        tavily_client_instance: Tavily client instance
-        search_config: Configuration dictionary with search parameters
-
-    Returns:
-        Configured search function
-    """
-    if tavily_client_instance is None:
-        logger.warning("Tavily client not available, creating mock search function")
-
-        def internet_search(query: str) -> str:
-            """Mock internet search when Tavily is not configured."""
-            return "Internet search not available. Please configure TAVILY_API_KEY environment variable."
-
-        return internet_search
-
-    # Get search config parameters
-    max_results = search_config.get("max_results", 5)
-    topic = search_config.get("topic", "general")
-    include_raw_content = search_config.get("include_raw_content", False)
-
-    logger.info(f"Configuring internet search with max_results={max_results}, topic={topic}")
-
-    def internet_search(
-        query: str,
-    ) -> Dict[str, Any]:
-        """
-        Run a web search using Tavily.
-
-        Args:
-            query: Search query string
-
-        Returns:
-            Search results dictionary
-        """
-        logger.info(f"Performing internet search for query: {query}")
-        try:
-            results = tavily_client_instance.search(
-                query,
-                max_results=max_results,
-                include_raw_content=include_raw_content,
-                topic=topic,
-            )
-            logger.info(f"Search completed, found {len(results.get('results', []))} results")
-            return results
-        except Exception as e:
-            logger.error(f"Error during internet search: {e}", exc_info=True)
-            return {"error": str(e), "results": []}
-
-    return internet_search
-
-
-# Initialize the deep research agent model configuration
-deep_research_agent_model_config: Dict = config_data.get("deep_research_agent_model_information", {})
-logger.info(f"Loaded deep research agent configuration")
-
-# Get search config
-search_config = deep_research_agent_model_config.get("internet_search", {})
-
-# Create the internet search tool
-internet_search = _create_internet_search_tool(tavily_client, search_config)
-
-# Initialize LLM for deep research agent
-deep_research_llm = ChatBedrockConverse(
-    model=deep_research_agent_model_config.get("model_id"),
-    temperature=deep_research_agent_model_config.get("inference_parameters", {}).get("temperature", 0.1),
-    max_tokens=deep_research_agent_model_config.get("inference_parameters", {}).get("max_tokens", 8192),
-    top_p=deep_research_agent_model_config.get("inference_parameters", {}).get("top_p", 0.92),
-)
-logger.info(f"Initialized deep research agent LLM: {deep_research_llm}")
-
-# Load deep research agent prompt
-deep_research_agent_prompt_path: str = deep_research_agent_model_config.get("deep_research_agent_prompt")
-deep_research_agent_base_prompt: str = ""
-if deep_research_agent_prompt_path:
-    try:
-        deep_research_agent_base_prompt = load_system_prompt(deep_research_agent_prompt_path)
-        logger.info(f"Loaded deep research agent prompt from: {deep_research_agent_prompt_path}")
-    except Exception as e:
-        logger.warning(f"Could not load deep research agent prompt: {e}")
-        deep_research_agent_base_prompt = "You are a deep research agent specializing in analyzing agent errors and finding solutions."
-
-# Create the deep research agent with tools
-logger.info("Creating deep research agent with internet search and file tools...")
-root_dir: str = None
-if root_dir is None:
-    root_dir = os.getcwd()
-    logger.info(f"Set the root directory: {root_dir}")
-    
-deep_research_agent = create_deep_agent(
-    model=deep_research_llm,
-    tools=[internet_search, write_file, read_file],
-    system_prompt=deep_research_agent_base_prompt,
-    backend=FilesystemBackend(root_dir=root_dir),
-)
-logger.info("Deep research agent created successfully")
+logger.info("Initializing Prompt Evolution System...")
+prompt_evolution_system = PromptOptimizationAgentFactory(config_file_path=CONFIG_FILE_FPATH)
+logger.info("✅ Prompt Evolution System initialized successfully")
 
 # ---------------- SHARED AGENT STATE ----------------
 
@@ -822,120 +708,144 @@ async def get_insights(
     return state
 
 @traceable
-def analyze_error_patterns(
+async def evolve_prompts(
     state: UnifiedAgentState
 ) -> UnifiedAgentState:
     """
-    Analyze error patterns from insights and raw logs, then perform deep research.
+    Analyze insights and evolve system prompts to improve agent performance.
 
-    This function takes:
-    - Raw logs from LangSmith traces
-    - Insights generated by the insights agent
-
-    Then analyzes error patterns, performs internet research to find solutions,
-    and generates a comprehensive markdown report.
+    This function:
+    - Takes insights generated by the insights agent
+    - Analyzes agent performance patterns
+    - Identifies areas for prompt improvement
+    - Uses the prompt evolution system to optimize prompts
 
     Args:
-        state: UnifiedAgentState containing raw_logs, insights, and user_question
+        state: UnifiedAgentState containing insights and user_question
 
     Returns:
-        Updated state with research_results and output_file_path populated
+        Updated state with research_results containing evolution recommendations
     """
-    print(f"\n🔬 [DEEP RESEARCH NODE] Starting deep error analysis...")
-    logger.info("In the DEEP ERROR ANALYSIS NODE - This is the second node...")
+    print(f"\n🧬 [EVOLUTION NODE] Starting prompt evolution analysis...")
+    logger.info("In the EVOLUTION NODE - Analyzing insights for prompt optimization...")
 
-    raw_logs = state.get("raw_logs", {})
     insights = state.get("insights", "")
     user_question = state.get("user_question", "")
+    platform = state.get("platform", "langsmith")
 
-    print(f"📋 [DEEP RESEARCH] Question: {user_question}")
-    print(f"💡 [DEEP RESEARCH] Insights available: {len(insights)} characters")
-    print(f"📊 [DEEP RESEARCH] Raw logs available: {'Yes' if raw_logs and raw_logs != {} else 'No'}")
+    print(f"📋 [EVOLUTION] Question: {user_question}")
+    print(f"💡 [EVOLUTION] Insights available: {len(insights)} characters")
+    print(f"🔍 [EVOLUTION] Platform: {platform}")
 
     logger.info(f"Received insights of length: {len(insights)}")
-    logger.info(f"Received raw logs: {bool(raw_logs and raw_logs != {})}")
 
     if not insights:
-        logger.warning("No insights provided for analysis")
-        print("⚠️ [DEEP RESEARCH] No insights available, skipping analysis")
+        logger.warning("No insights provided for evolution")
+        print("⚠️ [EVOLUTION] No insights available, skipping evolution")
         state["research_results"] = ""
         return state
 
     try:
-        print("🔍 [DEEP RESEARCH] Preparing analysis prompt...")
-        # Get output configuration from config
-        output_config = deep_research_agent_model_config.get("output", {})
-        output_dir = output_config.get("default_output_dir", "reports")
-        file_format = output_config.get("default_file_format", "md")
+        print("🔍 [EVOLUTION] Creating optimization agent...")
 
-        # Generate output file path with timestamp
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file_path = f"{output_dir}/error_analysis_{timestamp}.{file_format}"
+        # Create the optimization agent using the evolution system
+        from evolution.prompt_evolution import OfflineOptimizationType
+        optimization_agent = await prompt_evolution_system.create_optimization_agent(
+            optimization_type=OfflineOptimizationType.SYSTEM_PROMPT
+        )
 
-        # Create comprehensive analysis prompt with both raw logs and insights
-        analysis_prompt = f"""
+        logger.info("Optimization agent created successfully")
+        print("✅ [EVOLUTION] Optimization agent ready")
+
+        # Create evolution prompt with insights
+        evolution_prompt = f"""
 ## User Question:
 {user_question}
 
-## Insights from Insights Agent:
+## Platform:
+{platform}
+
+## Insights from Observability Platform:
 {insights}
 
-## Raw Logs from Agent Traces:
-{json.dumps(raw_logs, indent=2, default=str)}
+## Task:
+Analyze the insights above and identify opportunities to optimize system prompts for better agent performance.
+Consider:
+1. Error patterns that could be addressed with better prompting
+2. Performance bottlenecks that better instructions could solve
+3. Clarifications or additional context the agent might need
+4. Ways to make the agent more robust and reliable
+
+Provide specific, actionable recommendations for prompt improvements.
 """
 
-        logger.info("Invoking deep research agent for analysis...")
-        print("🤖 [DEEP RESEARCH] Invoking deep research agent (this may take a while)...")
+        logger.info("Invoking optimization agent for evolution...")
+        print("🤖 [EVOLUTION] Invoking optimization agent (this may take a while)...")
 
-        # Invoke the deep research agent
-        response = deep_research_agent.invoke({"messages": [HumanMessage(content=analysis_prompt)]})
-        print("✅ [DEEP RESEARCH] Analysis complete!")
+        # Invoke the optimization agent (async)
+        response = optimization_agent.astream(
+            {"messages": [HumanMessage(content=evolution_prompt)]},
+            stream_mode=["updates", "messages"]
+        )
 
-        # Extract results
-        if "messages" in response and len(response["messages"]) > 0:
-            last_message = response["messages"][-1]
-            research_results = last_message.content if hasattr(last_message, 'content') else str(last_message)
-        else:
-            research_results = str(response)
-        state["research_results"] = research_results
-        state["output_file_path"] = output_file_path
-        state["messages"] = [
-            HumanMessage(content=analysis_prompt),
-            AIMessage(content=research_results)
-        ]
+        # Collect evolution results
+        evolution_results = ""
+        print("\n" + "="*80)
+        print("EVOLUTION AGENT RESPONSE (streaming):")
+        print("="*80 + "\n")
 
-        logger.info(f"Deep research analysis completed. Report saved to: {output_file_path}")
+        # Iterate through the async stream
+        async for stream_mode, chunk in response:
+            if stream_mode == "messages":
+                # Print tokens as they stream
+                if hasattr(chunk, 'content') and chunk.content:
+                    if isinstance(chunk.content, str):
+                        print(chunk.content, end="", flush=True)
+                        evolution_results += chunk.content
+                    elif isinstance(chunk.content, list):
+                        for item in chunk.content:
+                            if isinstance(item, dict) and item.get('type') == 'text':
+                                text = item.get('text', '')
+                                print(text, end="", flush=True)
+                                evolution_results += text
+
+        print("\n" + "="*80)
+        print("✅ [EVOLUTION] Analysis complete!")
+
+        state["research_results"] = evolution_results
+        state["output_file_path"] = ""  # Evolution doesn't create files by default
+
+        logger.info(f"Prompt evolution analysis completed")
     except Exception as e:
-        logger.error(f"Error during deep research analysis: {e}", exc_info=True)
-        error_msg = f"Error during analysis: {str(e)}"
+        logger.error(f"Error during prompt evolution: {e}", exc_info=True)
+        error_msg = f"Error during evolution: {str(e)}"
         state["research_results"] = error_msg
         state["output_file_path"] = ""
-        # Note: Not updating messages here as the error will be communicated through research_results
+
     return state
 
 
 @traceable
-def route_to_deep_research(
+def route_to_evolution(
     state: UnifiedAgentState
 ) -> str:
     """
-    Routing function that determines whether to invoke the deep research agent.
+    Routing function that determines whether to invoke the evolution agent.
 
     Uses a small LLM to analyze:
-    1. Whether there are logs/traces available
-    2. Whether the insights indicate issues to investigate
-    3. Whether the user is asking for analysis/debugging help
+    1. Whether the insights indicate patterns that could benefit from prompt optimization
+    2. Whether the user is asking for prompt improvements
+    3. Whether there are performance issues that better prompting could address
 
     Args:
-        state: UnifiedAgentState containing user_question, raw_logs, and insights
+        state: UnifiedAgentState containing user_question and insights
 
     Returns:
-        "analyze_errors" to route to deep research agent, or END to skip it
+        "evolve_prompts" to route to evolution agent, or END to skip it
     """
-    print("\n🚦 [ROUTING] Deciding whether to invoke deep research...")
+    print("\n🚦 [ROUTING] Deciding whether to invoke prompt evolution...")
     user_question = state.get("user_question", "")
-    logger.info(f"Going to check if the user question requires analysis: {user_question}")
+    logger.info(f"Going to check if the user question requires prompt evolution: {user_question}")
 
     # Prepare the routing prompt
     routing_prompt = router_prompt_template.format(
@@ -944,20 +854,21 @@ def route_to_deep_research(
 
     try:
         # Invoke the routing LLM
-        logger.info("Invoking routing LLM to determine if deep research is needed...")
+        logger.info("Invoking routing LLM to determine if evolution is needed...")
         print("🤔 [ROUTING] Analyzing user question...")
         response = router_llm.invoke([HumanMessage(content=routing_prompt)])
         routing_decision = response.content.strip().upper()
         logger.info(f"Routing LLM decision: {routing_decision}")
 
-        # Parse the decision
-        if "ROUTE_TO_RESEARCH" in routing_decision:
-            print("➡️  [ROUTING] Decision: Routing to deep research agent")
-            logger.info("Routing to deep research agent")
-            return "analyze_errors"
+        # Parse the decision - checking for ROUTE_TO_RESEARCH which the prompt should return
+        # for evolution requests (the prompt template may say "research" but we use it for evolution)
+        if "ROUTE_TO_RESEARCH" in routing_decision or "ROUTE_TO_EVOLUTION" in routing_decision:
+            print("➡️  [ROUTING] Decision: Routing to prompt evolution agent")
+            logger.info("Routing to prompt evolution agent")
+            return "evolve_prompts"
         else:
-            print("✋ [ROUTING] Decision: Skipping deep research, ending workflow")
-            logger.info("Skipping deep research agent, ending workflow")
+            print("✋ [ROUTING] Decision: Skipping evolution, ending workflow")
+            logger.info("Skipping evolution agent, ending workflow")
             return END
     except Exception as e:
         logger.error(f"Error during routing decision: {e}", exc_info=True)
@@ -977,23 +888,23 @@ def _build_graph() -> StateGraph:
     # Add nodes
     workflow.add_node("select_platform", select_platform)
     workflow.add_node("get_insights", get_insights)
-    workflow.add_node("analyze_errors", analyze_error_patterns)
+    workflow.add_node("evolve_prompts", evolve_prompts)
 
     # Define edges - platform selection happens first
     workflow.add_edge(START, "select_platform")
     workflow.add_edge("select_platform", "get_insights")
 
-    # Conditional routing: Use LLM to decide if deep research is needed
+    # Conditional routing: Use LLM to decide if evolution is needed
     workflow.add_conditional_edges(
         "get_insights",
-        route_to_deep_research,
+        route_to_evolution,
         {
-            "analyze_errors": "analyze_errors",
+            "evolve_prompts": "evolve_prompts",
             END: END
         }
     )
 
-    workflow.add_edge('analyze_errors', END)
+    workflow.add_edge('evolve_prompts', END)
     logger.info("Graph built successfully with conditional routing and memory checkpointer")
     return workflow.compile(checkpointer=memory)
 
@@ -1116,9 +1027,9 @@ def _print_welcome_message(
     print("\n" + "="*80)
     print("Self-Healing Agent - Unified Multi-Agent Workflow (Interactive Mode)")
     print("="*80)
-    print("Workflow: Insights Agent -> Research Agent")
-    print("  1. Insights Agent: Analyzes LangSmith traces and generates insights")
-    print("  2. Research Agent: Performs error analysis and internet research")
+    print("Workflow: Insights Agent -> Evolution Agent")
+    print("  1. Insights Agent: Analyzes observability traces and generates insights")
+    print("  2. Evolution Agent: Optimizes system prompts based on agent performance")
     if session_id:
         print(f"\nSession ID: {session_id}")
     else:
