@@ -312,9 +312,12 @@ def get_runs_from_session(
             params["filter"] = filter_query
 
         logger.debug(f"Fetching runs with params: {params}")
-        runs_from_session = _make_request("/api/v1/runs/query", config, method="POST", json_data=params)
-        logger.debug(f"Retrieved runs from session")
-        return runs_from_session
+        response = _make_request("/api/v1/runs/query", config, method="POST", json_data=params)
+
+        # Extract the runs list from the response
+        runs = response.get("runs", []) if isinstance(response, dict) else response
+        logger.debug(f"Retrieved {len(runs)} runs from session")
+        return runs
     except Exception as e:
         logger.error(f"Error getting runs from session: {e}")
         raise

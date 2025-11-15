@@ -1,5 +1,5 @@
 """
-Self-Healing Agent - Log Curator
+Self-Healing Agent - Evolve
 
 This is the agent that is responsible to do the following high value tasks:
 
@@ -728,17 +728,13 @@ async def evolve_prompts(
     """
     print(f"\n🧬 [EVOLUTION NODE] Starting prompt evolution analysis...")
     logger.info("In the EVOLUTION NODE - Analyzing insights for prompt optimization...")
-
     insights = state.get("insights", "")
     user_question = state.get("user_question", "")
     platform = state.get("platform", "langsmith")
-
     print(f"📋 [EVOLUTION] Question: {user_question}")
     print(f"💡 [EVOLUTION] Insights available: {len(insights)} characters")
     print(f"🔍 [EVOLUTION] Platform: {platform}")
-
     logger.info(f"Received insights of length: {len(insights)}")
-
     if not insights:
         logger.warning("No insights provided for evolution")
         print("⚠️ [EVOLUTION] No insights available, skipping evolution")

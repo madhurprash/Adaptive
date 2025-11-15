@@ -165,8 +165,7 @@ class PromptOptimizationAgentFactory:
         """Create the LLM for the optimization agent."""
         model_id = self.optimization_agent_config.get('model_id')
         inference_params = self.optimization_agent_config.get(
-            'inference_parameters',
-            {}
+            'inference_parameters'
         )
         if CLAUDE_4_5_SONNET_HINT not in model_id:
             llm = ChatBedrockConverse(
@@ -236,10 +235,8 @@ class PromptOptimizationAgentFactory:
         # The file tools from agent_tools.file_tools are already configured
         # They provide: read_file, write_file
         file_tools = [read_file, write_file]
-
         logger.info(f"Created {len(file_tools)} file system tools")
         logger.info(f"Available tools: {', '.join([tool.name for tool in file_tools])}")
-
         return file_tools
 
     async def create_optimization_agent(
@@ -273,7 +270,6 @@ class PromptOptimizationAgentFactory:
         if self.hitl_middleware:
             middleware_stack.append(self.hitl_middleware)
             logger.info("Added HITL middleware to stack")
-
         # Create the agent
         logger.info(f"Building {optimization_type.value} optimization agent with "
             f"{len(file_tools)} tools and {len(middleware_stack)} middleware...")

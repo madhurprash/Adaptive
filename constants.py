@@ -24,10 +24,6 @@ USE_SUDO_FOR_FILE_OPS: bool = False
 # Default output directory for reports and analysis files
 DEFAULT_OUTPUT_DIR: str = "reports"
 
-# This is the Claude model id hint to check to not provide the temperature as a part of the
-# LLM initialization
-CLAUDE_4_5_SONNET_HINT: str = "sonnet-4-5"
-
 # This is the namespace where the memory will be stored and retrieved from
 ERRORS_AND_INSIGHTS_NAMESPACE: str = "errors_and_insightsn"
 
@@ -60,3 +56,11 @@ SUPPORTED_PLATFORMS: tuple[str, ...] = (
 
 # Default platform if none specified
 DEFAULT_PLATFORM: str = PLATFORM_LANGSMITH
+
+
+# =============================================================================
+# MODEL CONSTANTS
+# =============================================================================
+
+# Model identifier hints for conditional logic
+CLAUDE_4_5_SONNET_HINT: str = "sonnet-4-5"

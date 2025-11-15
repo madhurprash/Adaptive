@@ -19,7 +19,7 @@ from io import StringIO
 # Add parent directory to path to import agent
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from evolve_agents import run_agent
+from evolve import run_agent
 from insights.insights_agents import (
     ObservabilityPlatform,
     get_platform_from_config,
