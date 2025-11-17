@@ -14,7 +14,6 @@ prompt_optimization_agent_model_information:
     system_prompt: prompt_templates/evolution/prompt_optimization_system_prompt.txt
   # Model ID for prompt optimization agent
   model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
-
   # Inference parameters for optimization agent
   inference_parameters:
     temperature: 0.1
@@ -22,6 +21,8 @@ prompt_optimization_agent_model_information:
     top_p: 0.92
 
   # HITL (Human-in-the-Loop) Configuration
+  # this human in the loop middleware will be used before certain tools are executed, 
+  # for example for read and write tool.
   hitl:
     enabled: true
     config_file: "configs/hitl_config.yaml"

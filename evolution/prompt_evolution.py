@@ -28,13 +28,13 @@ from langchain.agents import create_agent
 from typing import Dict, List, Optional, Any
 from langchain_aws import ChatBedrockConverse
 from utils import load_system_prompt, load_config
+# Import file tools for repository access
+from agent_tools.file_tools import read_file, write_file, list_directory, search_files
 # This middleware adds a `write_todos` tool that allows agents to create and manage
 # structured task lists for complex multi-step operations. It's designed to help
 # agents track progress, organize complex tasks, and provide users with visibility
 # into task completion status.
 from langchain.agents.middleware import TodoListMiddleware, HumanInTheLoopMiddleware
-# Import file tools for repository access
-from agent_tools.file_tools import read_file, write_file
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 class OfflineOptimizationType(Enum):
     """Supported optimization types."""
     # more optimizations can be added here
+    # this is a class enum and will contain online and offline evaluation strategies
     SYSTEM_PROMPT = "system_prompt"
 
 class PromptOptimizationAgentFactory:
@@ -69,27 +70,13 @@ class PromptOptimizationAgentFactory:
     ):
         """
         Initialize the factory with configuration.
-
         Args:
             config_file_path: Path to config.yaml file
         """
         self.config_data = load_config(config_file_path)
         logger.info(f"Loaded configuration from {config_file_path}")
         # Load optimization agent configuration
-        self.optimization_agent_config = self.config_data.get(
-            'prompt_optimization_agent_model_information',
-            {}
-        )
-        # Get repository configuration
-        self.repository_config = self.optimization_agent_config.get(
-            'agent_repository',
-            {}
-        )
-        self.repository_path = self.repository_config.get(
-            'local_path',
-            os.getcwd()
-        )
-        logger.info(f"Repository path: {self.repository_path}")
+        self.optimization_agent_config = self.config_data.get('prompt_optimization_agent_model_information')
         # Initialize middleware components
         self._initialize_middleware()
 
@@ -99,9 +86,8 @@ class PromptOptimizationAgentFactory:
         self.todo_list_middleware = TodoListMiddleware()
 
         # Initialize HITL middleware if enabled
-        hitl_config = self.optimization_agent_config.get('hitl', {})
+        hitl_config = self.optimization_agent_config.get('hitl')
         hitl_enabled = hitl_config.get('enabled', False)
-
         if hitl_enabled:
             hitl_config_file = hitl_config.get('config_file', 'hitl_config.yaml')
             self.hitl_middleware = self._load_hitl_middleware(hitl_config_file)
@@ -127,18 +113,14 @@ class PromptOptimizationAgentFactory:
             # Load HITL config file
             with open(config_file, 'r') as f:
                 hitl_config = yaml.safe_load(f)
-
             logger.info(f"Loaded HITL config from: {config_file}")
-
             # Check if HITL is enabled globally
             if not hitl_config.get('enable_hitl_config', False):
                 logger.warning("HITL config found but enable_hitl_config is False")
                 return None
-
             # Build interrupt_on dictionary from tool_names config
             interrupt_on = {}
             tool_names = hitl_config.get('tool_names', {})
-
             for tool_name, tool_config in tool_names.items():
                 if isinstance(tool_config, dict):
                     # Tool has allowed_decisions configuration
@@ -148,12 +130,9 @@ class PromptOptimizationAgentFactory:
                     # Tool has boolean configuration
                     interrupt_on[tool_name] = tool_config
                     logger.debug(f"  - {tool_name}: {tool_config}")
-
             logger.info(f"Configured HITL for {len(interrupt_on)} tools")
-
             # Create and return HITL middleware
             return HumanInTheLoopMiddleware(interrupt_on=interrupt_on)
-
         except FileNotFoundError:
             logger.error(f"HITL config file not found: {config_file}")
             return None
@@ -234,7 +213,7 @@ class PromptOptimizationAgentFactory:
 
         # The file tools from agent_tools.file_tools are already configured
         # They provide: read_file, write_file
-        file_tools = [read_file, write_file]
+        file_tools = [read_file, write_file, list_directory, search_files]
         logger.info(f"Created {len(file_tools)} file system tools")
         logger.info(f"Available tools: {', '.join([tool.name for tool in file_tools])}")
         return file_tools
@@ -265,7 +244,6 @@ class PromptOptimizationAgentFactory:
         file_tools = self._create_file_tools()
         # Build complete middleware stack
         middleware_stack = [self.todo_list_middleware]
-
         # Add HITL middleware if enabled
         if self.hitl_middleware:
             middleware_stack.append(self.hitl_middleware)
@@ -283,7 +261,6 @@ class PromptOptimizationAgentFactory:
             f"   - Tools: {len(file_tools)}\n"
             f"   - Middleware: {len(middleware_stack)}\n"
             f"   - Model: {self.optimization_agent_config.get('model_id')}\n"
-            f"   - Repository: {self.repository_path}"
         )
         return optimization_agent
 
@@ -314,7 +291,6 @@ async def create_optimization_agent_for_type(
             f"Unsupported optimization type: {optimization_type}. "
             f"Supported types: system_prompt, code_optimization, performance_optimization"
         )
-
     # Create factory and agent
     factory = PromptOptimizationAgentFactory(config_file_path=config_file_path)
     return await factory.create_optimization_agent(optimization_type=optimization_enum)

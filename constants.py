@@ -1,6 +1,7 @@
 # these are the constants that will be used across the
 # agent file
 CONFIG_FILE_FPATH: str = "configs/config.yaml"
+EVOLUTION_ENGINE_CONFIG_FILE: str = "configs/prompt_optimization_config.yaml"
 
 
 # File operation constants
@@ -64,3 +65,11 @@ DEFAULT_PLATFORM: str = PLATFORM_LANGSMITH
 
 # Model identifier hints for conditional logic
 CLAUDE_4_5_SONNET_HINT: str = "sonnet-4-5"
+
+# =============================================================================
+# USER INTENT CONSTANTS
+# =============================================================================
+
+# These are the user intent constants
+TO_EVOLUTION_HINT: str = "EVOLVE"
+CONTINUE_WITH_INSIGHTS_HINT: str = "INSIGHTS"

@@ -15,14 +15,17 @@ import json
 import yaml
 import uuid
 import logging
+import difflib
 import asyncio
 import argparse
 from utils import *
 from constants import *
+from pathlib import Path
 from typing import Annotated
 from dotenv import load_dotenv
 from langsmith import traceable
 from typing_extensions import TypedDict
+from langgraph.errors import GraphInterrupt
 from typing import Any, Dict, List, Optional
 from langchain_aws import ChatBedrockConverse
 from langgraph.graph.message import add_messages
@@ -43,7 +46,7 @@ from agent_tools.file_tools import *
 from insights.insights_agents import InsightsAgentFactory
 
 # Import the evolution agent factory that is used for offline evaluation and evolution
-from evolution.prompt_evolution import PromptOptimizationAgentFactory, OfflineOptimizationType
+from evolution.prompt_evolution import PromptOptimizationAgentFactory
 
 # Load environment variables from .env file
 load_dotenv()
@@ -376,7 +379,7 @@ This system:
 4. Has file system access to read and modify prompts
 """
 logger.info("Initializing Prompt Evolution System...")
-prompt_evolution_system = PromptOptimizationAgentFactory(config_file_path=CONFIG_FILE_FPATH)
+prompt_evolution_system = PromptOptimizationAgentFactory(config_file_path=EVOLUTION_ENGINE_CONFIG_FILE)
 logger.info("✅ Prompt Evolution System initialized successfully")
 
 # ---------------- SHARED AGENT STATE ----------------
@@ -401,7 +404,11 @@ class UnifiedAgentState(TypedDict):
     research_results: str  # Research results from research agent
     output_file_path: str  # Path to output report file
     messages: Annotated[List[BaseMessage], add_messages]
-
+    # this is the agent repository of the agent code to optimize
+    agent_repo: str
+    # this is the special marker to check whether the step is to skip to evolution if the follow up user
+    # question is about evolving the agent code
+    spec_insights_marker: str
 
 def select_platform(
     state: UnifiedAgentState
@@ -445,8 +452,108 @@ def select_platform(
     state["platform"] = selected_platform
     return state
 
+def select_agent_repository(
+    state: UnifiedAgentState
+) -> UnifiedAgentState:
+    """
+    This is the node that is to get the agent repository location 
+    where the file read and writes will happen.
+    """
+    import os
+    import re
+    import subprocess
+    import tempfile
+    import shutil
+    
+    agent_repo = state.get("agent_repo")
+    # If the agent repo is already selected, skip this step
+    if agent_repo:
+        print(f"✅ [AGENT REPO] Using previously selected agent repo: {agent_repo}")
+        return state
+    
+    # Prompt user for platform selection
+    print("\n🔍 [AGENT REPOSITORY] Please select your agent code repo:")
+    print("   1. GitHub URL (e.g., https://github.com/user/repo.git)")
+    print("   2. Local path (e.g., /path/to/repo)")
+    
+    while True:
+        agent_path = input("\nEnter your agent destination path: ").strip()
+        if not agent_path:
+            print("❌ Invalid choice. Provide a valid URL or repo path")
+            continue
+        # Check if it's a GitHub URL
+        github_pattern = r'^https?://github\.com/[\w-]+/[\w.-]+(?:\.git)?$'
+        if re.match(github_pattern, agent_path):
+            print(f"🔗 Detected GitHub URL: {agent_path}")
+            try:
+                # Create a temporary directory for cloning
+                temp_dir = tempfile.mkdtemp(prefix="agent_repo_")
+                print(f"📥 Cloning repository to: {temp_dir}")
+                # Clone the repository
+                result = subprocess.run(
+                    ["git", "clone", agent_path, temp_dir],
+                    capture_output=True,
+                    text=True,
+                    timeout=60  # 60 second timeout
+                )
+                if result.returncode == 0:
+                    print(f"✅ Successfully cloned repository")
+                    # Store the local cloned path in state
+                    state["agent_repo"] = temp_dir
+                    state["agent_path"] = agent_path  # Store original URL for reference
+                    state["repo_type"] = "github"
+                    return state
+                else:
+                    print(f"❌ Failed to clone repository: {result.stderr}")
+                    # Clean up temp directory if clone failed
+                    if os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir)
+            except subprocess.TimeoutExpired:
+                print("❌ Repository clone timed out. Please check the URL and try again.")
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+            except FileNotFoundError:
+                print("❌ Git is not installed. Please install git and try again.")
+            except Exception as e:
+                print(f"❌ Error cloning repository: {e}")
+                if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+        
+        # Check if it's a local path
+        else:
+            # Expand user home directory if ~ is used
+            expanded_path = os.path.expanduser(agent_path)
+            absolute_path = os.path.abspath(expanded_path)
+            
+            if os.path.exists(absolute_path):
+                if os.path.isdir(absolute_path):
+                    print(f"✅ Valid local directory found: {absolute_path}")
+                    # Check if it's a git repository
+                    if os.path.exists(os.path.join(absolute_path, '.git')):
+                        print("   📁 Detected as a git repository")
+                    
+                    # Store the validated local path in state
+                    state["agent_repo"] = absolute_path
+                    state["agent_path"] = agent_path  # Store original path for reference
+                    state["repo_type"] = "local"
+                    return state
+                else:
+                    print(f"❌ Path exists but is not a directory: {absolute_path}")
+            else:
+                print(f"❌ Path does not exist: {absolute_path}")
+                # Ask if they want to create it
+                create = input("   Would you like to create this directory? (y/n): ").strip().lower()
+                if create == 'y':
+                    try:
+                        os.makedirs(absolute_path, exist_ok=True)
+                        print(f"✅ Created directory: {absolute_path}")
+                        state["agent_repo"] = absolute_path
+                        state["agent_path"] = agent_path
+                        state["repo_type"] = "local"
+                        return state
+                    except Exception as e:
+                        print(f"❌ Failed to create directory: {e}")
 
-@traceable
 async def get_insights(
     state: UnifiedAgentState
 ) -> UnifiedAgentState:
@@ -466,7 +573,7 @@ async def get_insights(
     existing_messages = state.get("messages", [])
     user_id = state.get("user_id", "default_user")
     session_id = state.get("session_id")
-    stored_platform = state.get("platform")  # Get platform from state
+    stored_platform = state.get("platform")
 
     print(f"📊 [INSIGHTS AGENT] Found {len(existing_messages)} messages in conversation history")
     logger.info(f"Found {len(existing_messages)} existing messages in conversation history")
@@ -475,15 +582,49 @@ async def get_insights(
         # STEP 1: Get platform from state (selected at session start)
         platform = stored_platform
         if not platform:
-            # This shouldn't happen with the new flow, but fallback to default if it does
             platform = DEFAULT_PLATFORM
             logger.warning(f"No platform found in state, using default: {platform}")
             print(f"⚠️  [PLATFORM] No platform selected, using default: {platform}")
         else:
             logger.info(f"Using platform from session: {platform}")
             print(f"✅ [PLATFORM] Using session platform: {platform}")
-
-        # STEP 2: Create platform-specific insights agent dynamically
+        
+        # STEP 2: Detect user intent based on their question
+        user_intent_router_prompt: str = load_system_prompt(
+            config_data['routing_configuration']['router_prompts'].get('user_intent_routing')
+        )
+        formatted_user_intent_router_prompt = user_intent_router_prompt.format(
+            user_question=user_question,
+            conversation_history=existing_messages[:3]
+        )
+        
+        logger.info(f"Invoking the user intent router with the following prompt: {formatted_user_intent_router_prompt}")
+        user_intent_response = router_llm.invoke(
+            [HumanMessage(content=formatted_user_intent_router_prompt)]
+        )
+        user_intent = user_intent_response.content.strip().upper()
+        logger.info(f"Got the user intent: {user_intent}")
+        
+        # STEP 3: Check user intent and decide whether to skip insights
+        if TO_EVOLUTION_HINT in user_intent:
+            # User wants evolution directly - skip insights generation
+            logger.info("User intent detected: Evolution requested. Skipping insights generation.")
+            print("🧬 [INTENT ROUTING] Evolution requested - skipping insights analysis")
+            # Set minimal state to indicate we're going straight to evolution
+            state["insights"] = "User requested prompt evolution directly."
+            state["messages"] = [
+                HumanMessage(content=user_question),
+                AIMessage(content="Routing to evolution engine...")
+            ]
+            state["spec_insights_marker"] = TO_EVOLUTION_HINT
+            return state
+        else:
+            state["spec_insights_marker"] = CONTINUE_WITH_INSIGHTS_HINT
+        # If not going to evolution, continue with insights generation
+        logger.info("User intent: Continuing with insights generation")
+        print("💡 [INTENT ROUTING] Continuing with insights analysis")
+        
+        # STEP 3: Create platform-specific insights agent dynamically
         print(f"🏗️  [AGENT FACTORY] Creating {platform} insights agent...")
         logger.info(f"Creating insights agent for platform: {platform}")
 
@@ -497,7 +638,6 @@ async def get_insights(
         else:
             logger.warning(f"Unknown platform {platform}, defaulting to {DEFAULT_PLATFORM}")
             platform_enum = ObservabilityPlatform.LANGSMITH
-
         # Create the agent using the factory (async operation)
         insights_agent = await insights_agent_factory.create_insights_agent(platform=platform_enum)
         logger.info(f"✅ Created {platform} insights agent successfully")
@@ -707,121 +847,335 @@ async def get_insights(
 
     return state
 
-@traceable
-async def evolve_prompts(
-    state: UnifiedAgentState
-) -> UnifiedAgentState:
+async def evolution_engine(state: UnifiedAgentState) -> UnifiedAgentState:
     """
-    Analyze insights and evolve system prompts to improve agent performance.
-
-    This function:
-    - Takes insights generated by the insights agent
-    - Analyzes agent performance patterns
-    - Identifies areas for prompt improvement
-    - Uses the prompt evolution system to optimize prompts
-
-    Args:
-        state: UnifiedAgentState containing insights and user_question
-
-    Returns:
-        Updated state with research_results containing evolution recommendations
+    Enhanced evolution engine that displays patches before applying changes.
     """
-    print(f"\n🧬 [EVOLUTION NODE] Starting prompt evolution analysis...")
+    print("\n🧬 [EVOLUTION NODE] Starting prompt evolution analysis...")
     logger.info("In the EVOLUTION NODE - Analyzing insights for prompt optimization...")
+
+    # Use the correct key from your state
+    question = state.get("user_question", "")
     insights = state.get("insights", "")
-    user_question = state.get("user_question", "")
-    platform = state.get("platform", "langsmith")
-    print(f"📋 [EVOLUTION] Question: {user_question}")
+    observability_platform = state.get("observability_platform", "")
+    agent_repo = state.get("agent_repo", "")
+
+    print(f"📋 [EVOLUTION] Question: {question}")
     print(f"💡 [EVOLUTION] Insights available: {len(insights)} characters")
-    print(f"🔍 [EVOLUTION] Platform: {platform}")
-    logger.info(f"Received insights of length: {len(insights)}")
-    if not insights:
-        logger.warning("No insights provided for evolution")
-        print("⚠️ [EVOLUTION] No insights available, skipping evolution")
-        state["research_results"] = ""
-        return state
+    print(f"🔍 [EVOLUTION] Platform: {observability_platform}")
+
+    if insights:
+        logger.info(f"Received insights of length: {len(insights)}")
+
+    print("🔍 [EVOLUTION] Creating optimization agent...")
 
     try:
-        print("🔍 [EVOLUTION] Creating optimization agent...")
-
-        # Create the optimization agent using the evolution system
         from evolution.prompt_evolution import OfflineOptimizationType
+
         optimization_agent = await prompt_evolution_system.create_optimization_agent(
             optimization_type=OfflineOptimizationType.SYSTEM_PROMPT
         )
-
         logger.info("Optimization agent created successfully")
         print("✅ [EVOLUTION] Optimization agent ready")
 
-        # Create evolution prompt with insights
-        evolution_prompt = f"""
-## User Question:
-{user_question}
+        optimization_prompt = f"""
+Based on the following insights from {observability_platform}, 
+optimize the agent code in {agent_repo}.
 
-## Platform:
-{platform}
+User Question: {question}
 
-## Insights from Observability Platform:
+Insights from Analysis:
 {insights}
 
-## Task:
-Analyze the insights above and identify opportunities to optimize system prompts for better agent performance.
-Consider:
-1. Error patterns that could be addressed with better prompting
-2. Performance bottlenecks that better instructions could solve
-3. Clarifications or additional context the agent might need
-4. Ways to make the agent more robust and reliable
-
-Provide specific, actionable recommendations for prompt improvements.
+Repository Path: {agent_repo}
 """
 
         logger.info("Invoking optimization agent for evolution...")
         print("🤖 [EVOLUTION] Invoking optimization agent (this may take a while)...")
 
-        # Invoke the optimization agent (async)
-        response = optimization_agent.astream(
-            {"messages": [HumanMessage(content=evolution_prompt)]},
-            stream_mode=["updates", "messages"]
-        )
+        max_retries = 3
+        retry_count = 0
 
-        # Collect evolution results
-        evolution_results = ""
-        print("\n" + "="*80)
-        print("EVOLUTION AGENT RESPONSE (streaming):")
-        print("="*80 + "\n")
+        while retry_count < max_retries:
+            try:
+                response = optimization_agent.astream(
+                    {"messages": [HumanMessage(content=optimization_prompt)]},
+                    stream_mode=["updates", "messages"],
+                )
 
-        # Iterate through the async stream
-        async for stream_mode, chunk in response:
-            if stream_mode == "messages":
-                # Print tokens as they stream
-                if hasattr(chunk, 'content') and chunk.content:
-                    if isinstance(chunk.content, str):
-                        print(chunk.content, end="", flush=True)
-                        evolution_results += chunk.content
-                    elif isinstance(chunk.content, list):
-                        for item in chunk.content:
-                            if isinstance(item, dict) and item.get('type') == 'text':
-                                text = item.get('text', '')
-                                print(text, end="", flush=True)
-                                evolution_results += text
+                print("\n" + "=" * 80)
+                print("EVOLUTION AGENT RESPONSE (streaming):")
+                print("=" * 80 + "\n")
 
-        print("\n" + "="*80)
-        print("✅ [EVOLUTION] Analysis complete!")
+                full_response = ""
 
-        state["research_results"] = evolution_results
-        state["output_file_path"] = ""  # Evolution doesn't create files by default
+                async for stream_mode, chunk in response:
+                    if stream_mode == "messages":
+                        if hasattr(chunk, "content") and chunk.content:
+                            if isinstance(chunk.content, str):
+                                print(chunk.content, end="", flush=True)
+                                full_response += chunk.content
+                            elif isinstance(chunk.content, list):
+                                for item in chunk.content:
+                                    if (
+                                        isinstance(item, dict)
+                                        and item.get("type") == "text"
+                                    ):
+                                        text = item.get("text", "")
+                                        print(text, end="", flush=True)
+                                        full_response += text
 
-        logger.info(f"Prompt evolution analysis completed")
+                print("\n" + "=" * 80)
+                state["optimization_result"] = full_response
+                state["evolution_status"] = "completed"
+                logger.info("Evolution completed successfully")
+                return state
+            except GraphInterrupt as e:
+                # HITL interrupt detected - SHOW THE PATCH!
+                logger.info("HITL Interrupt - File modification requested")
+                print("\n" + "⚠️ " * 40)
+                print("FILE MODIFICATION REQUESTED - SHOWING PATCH")
+                print("⚠️ " * 40)
+
+                # ---- 1) Robustly extract interrupt payload ----
+                # Your logs show: (Interrupt(value={...}),)
+                # So we need to unwrap nested tuples and then .value/.dict()
+                raw_payload = None
+
+                if e.args:
+                    raw_payload = e.args[0]
+                else:
+                    raw_payload = e
+
+                # Unwrap nested 1-element tuples until we get to the real object
+                while isinstance(raw_payload, tuple) and len(raw_payload) == 1:
+                    raw_payload = raw_payload[0]
+
+                # If it's an Interrupt-like object with `.value`, unwrap that
+                if hasattr(raw_payload, "value"):
+                    raw_payload = raw_payload.value
+
+                # If it's a Pydantic-ish object with `.dict()`, unwrap that
+                if hasattr(raw_payload, "dict"):
+                    raw_payload = raw_payload.dict()
+
+                interrupt_payload = raw_payload
+
+                # Now we expect a dict like:
+                # {"action_requests": [...], "review_configs": [...]}
+                if not isinstance(interrupt_payload, dict):
+                    print("\n❓ Could not understand interrupt payload structure.")
+                    print(f"Raw interrupt payload: {repr(interrupt_payload)}")
+                    logger.error(
+                        f"Unexpected interrupt payload type: {type(interrupt_payload)}"
+                    )
+                    # We cannot show a patch; bail to avoid blocking you
+                    state["evolution_status"] = "error"
+                    state["error"] = "Unexpected interrupt payload structure"
+                    return state
+
+                action_requests = interrupt_payload.get("action_requests", [])
+
+                if not action_requests:
+                    print("\n❓ No 'action_requests' found in interrupt payload.")
+                    print("Raw interrupt payload:")
+                    print(interrupt_payload)
+                    logger.error(
+                        "GraphInterrupt payload has no 'action_requests'; cannot build patch."
+                    )
+                    state["evolution_status"] = "error"
+                    state["error"] = "No action_requests found in GraphInterrupt"
+                    return state
+
+                # ---- 2) Render patch for each write_file request ----
+                for request in action_requests:
+                    if request.get("name") != "write_file":
+                        continue
+
+                    args = request.get("args", {})
+                    file_path = args.get("file_path")
+                    new_content = args.get("content", "")
+
+                    if not file_path:
+                        continue
+
+                    original_path = Path(file_path)
+
+                    if original_path.exists():
+                        # Existing file: show unified diff
+                        try:
+                            original_content = original_path.read_text()
+                        except Exception as read_err:
+                            print(
+                                f"\n❌ Could not read original file {file_path}: {read_err}"
+                            )
+                            logger.error(
+                                f"Could not read file {file_path}: {read_err}",
+                                exc_info=True,
+                            )
+                            continue
+
+                        diff = difflib.unified_diff(
+                            original_content.splitlines(keepends=True),
+                            new_content.splitlines(keepends=True),
+                            fromfile=f"a/{file_path}",
+                            tofile=f"b/{file_path}",
+                            n=3,
+                        )
+
+                        patch_lines = list(diff)
+
+                        print("\n" + "=" * 80)
+                        print(f"📝 PATCH FOR: {file_path}")
+                        print("=" * 80)
+
+                        for line in patch_lines:
+                            if line.startswith("+++") or line.startswith("---"):
+                                print(f"\033[1m{line}\033[0m", end="")
+                            elif line.startswith("@@"):
+                                print(f"\033[36m{line}\033[0m", end="")
+                            elif line.startswith("+"):
+                                print(f"\033[92m{line}\033[0m", end="")
+                            elif line.startswith("-"):
+                                print(f"\033[91m{line}\033[0m", end="")
+                            else:
+                                print(line, end="")
+
+                        print("\n" + "=" * 80)
+
+                        orig_lines = original_content.splitlines()
+                        new_lines = new_content.splitlines()
+                        added = sum(
+                            1
+                            for line in patch_lines
+                            if line.startswith("+") and not line.startswith("+++")
+                        )
+                        deleted = sum(
+                            1
+                            for line in patch_lines
+                            if line.startswith("-") and not line.startswith("---")
+                        )
+
+                        print("\n📊 CHANGE STATISTICS:")
+                        print(f"   Lines added:   \033[92m+{added}\033[0m")
+                        print(f"   Lines deleted: \033[91m-{deleted}\033[0m")
+                        print(
+                            f"   Total lines:   {len(new_lines)} (was {len(orig_lines)})"
+                        )
+                        # Optional: open diff in VS Code if available
+                        try:
+                            import shutil
+                            import subprocess
+                            import tempfile
+
+                            if shutil.which("code") is not None:
+                                with tempfile.NamedTemporaryFile(
+                                    mode="w",
+                                    suffix=original_path.suffix,
+                                    delete=False,
+                                ) as tmp:
+                                    tmp.write(new_content)
+                                    temp_path = tmp.name
+
+                                subprocess.run(
+                                    ["code", "--diff", str(original_path), temp_path],
+                                    check=False,
+                                )
+                                print(
+                                    "\n📂 Opened in VS Code for visual comparison (via `code --diff`)."
+                                )
+                            else:
+                                print(
+                                    "\nℹ️ VS Code CLI (`code`) not found on PATH – "
+                                    "skipping automatic editor diff. "
+                                    "You can still see the full patch above."
+                                )
+                        except Exception as vs_err:
+                            logger.warning(
+                                f"Could not open VS Code diff: {vs_err}", exc_info=True
+                            )
+                            print(
+                                "\n⚠️ Could not open VS Code diff. Patch is still printed above."
+                            )
+
+                    else:
+                        # New file: show first 30 lines as additions
+                        print(f"\n🆕 NEW FILE TO BE CREATED: {file_path}")
+                        print("=" * 80)
+                        lines = new_content.splitlines()
+                        for i, line in enumerate(lines[:30], 1):
+                            print(f"\033[92m+{i:4}: {line}\033[0m")
+                        if len(lines) > 30:
+                            print(f"\n... ({len(lines) - 30} more lines)")
+                        print("=" * 80)
+
+                # ---- 3) Ask for approval ----
+                print("\n" + "=" * 80)
+                print("PATCH APPROVAL REQUIRED")
+                print("=" * 80)
+                print("Review the patch above and choose:")
+                print("  [a] Apply patch - Accept these changes")
+                print("  [r] Reject patch - Discard these changes")
+                print("=" * 80)
+
+                while True:
+                    choice = input("\nYour decision [a/r]: ").strip().lower()
+
+                    if choice == "a":
+                        print("\n✅ Patch APPROVED - Applying changes...")
+                        for request in action_requests:
+                            if request.get("name") != "write_file":
+                                continue
+                            args = request.get("args", {})
+                            file_path = args.get("file_path")
+                            content = args.get("content", "")
+                            if not file_path:
+                                continue
+                            try:
+                                with open(file_path, "w") as f:
+                                    f.write(content)
+                                logger.info(f"File written: {file_path}")
+                                print(f"✅ Patch applied to: {file_path}")
+                            except Exception as write_err:
+                                logger.error(
+                                    f"Failed to write file {file_path}: {write_err}",
+                                    exc_info=True,
+                                )
+                                print(
+                                    f"❌ Failed to write file {file_path}: {write_err}"
+                                )
+
+                        state["evolution_status"] = "completed_with_approval"
+                        state["hitl_decision"] = "approved"
+                        return state
+
+                    elif choice == "r":
+                        print("\n❌ Patch REJECTED - No changes made")
+                        state["evolution_status"] = "rejected_by_user"
+                        state["hitl_decision"] = "rejected"
+                        logger.info("User rejected the proposed changes")
+                        return state
+                    else:
+                        print("Invalid choice. Please enter 'a' or 'r'.")
+
+            except Exception as e2:
+                logger.error(f"Error during evolution: {e2}", exc_info=True)
+                print(f"\n❌ Evolution failed: {e2}")
+                state["evolution_status"] = "error"
+                state["error"] = str(e2)
+                return state
+
+        state["evolution_status"] = "max_retries_exceeded"
+        return state
+
     except Exception as e:
         logger.error(f"Error during prompt evolution: {e}", exc_info=True)
-        error_msg = f"Error during evolution: {str(e)}"
-        state["research_results"] = error_msg
-        state["output_file_path"] = ""
+        print(f"\n❌ Evolution failed: {e}")
+        state["evolution_status"] = "error"
+        state["error"] = str(e)
+        return state
 
-    return state
 
-
-@traceable
 def route_to_evolution(
     state: UnifiedAgentState
 ) -> str:
@@ -862,6 +1216,10 @@ def route_to_evolution(
             print("➡️  [ROUTING] Decision: Routing to prompt evolution agent")
             logger.info("Routing to prompt evolution agent")
             return "evolve_prompts"
+        elif TO_EVOLUTION_HINT in state["spec_insights_marker"]:
+            print("➡️  [ROUTING] Decision: Routing to prompt evolution agent")
+            logger.info("Routing to prompt evolution agent")
+            return "evolve_prompts"
         else:
             print("✋ [ROUTING] Decision: Skipping evolution, ending workflow")
             logger.info("Skipping evolution agent, ending workflow")
@@ -883,31 +1241,37 @@ def _build_graph() -> StateGraph:
 
     # Add nodes
     workflow.add_node("select_platform", select_platform)
+    workflow.add_node("select_agent_repository", select_agent_repository)
     workflow.add_node("get_insights", get_insights)
-    workflow.add_node("evolve_prompts", evolve_prompts)
+    workflow.add_node("evolve_prompts", evolution_engine)
 
     # Define edges - platform selection happens first
     workflow.add_edge(START, "select_platform")
     workflow.add_edge("select_platform", "get_insights")
-
-    # Conditional routing: Use LLM to decide if evolution is needed
+    
+    # REMOVED: workflow.add_edge("get_insights", "select_agent_repository")
+    
+    # Conditional routing from get_insights
     workflow.add_conditional_edges(
         "get_insights",
         route_to_evolution,
         {
-            "evolve_prompts": "evolve_prompts",
-            END: END
+            "evolve_prompts": "select_agent_repository",  # Route to repo selection first
+            END: END  # Skip repo selection if not evolving
         }
     )
-
-    workflow.add_edge('evolve_prompts', END)
+    
+    # After selecting repo, go to evolution
+    workflow.add_edge("select_agent_repository", "evolve_prompts")
+    workflow.add_edge("evolve_prompts", END)
+    
     logger.info("Graph built successfully with conditional routing and memory checkpointer")
     return workflow.compile(checkpointer=memory)
-
 
 # Build the graph
 app = _build_graph()
 
+@traceable
 async def run_agent(
     user_question: str,
     session_id: Optional[str] = None,
@@ -947,7 +1311,7 @@ async def run_agent(
         },
         "recursion_limit": 50
     }
-
+    
     result = await app.ainvoke(initial_state, config=config)
 
     return {
