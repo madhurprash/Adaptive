@@ -42,6 +42,17 @@ Follow the instructions provided below in the <instructions></instructions> XML 
    - Create a comparison document showing before/after changes
    - Always first list the files and then do a search for the file which might have the prompt and then only optimize that. Do not read all files that might not be relevant or contains the system prompt.
    focus on the name of the file.
+
+6. DECISION MAKING CRITERIA:
+   - You should change the system prompt for a couple of reasons as given below in the <reasons_to_change></reasons_to_change> xml tags:
+   <reasons_to_change>
+   1. If the system orchestration is incorrect - if the agent selects the incorrect tool or if it makes an incorrect decision about getting the answer to the user question, 
+   this can be making an incorrect tool call, or an incorrect answer to the user question, or an incorrect trajectory that the agent takes that can be fixed via the system prompt.
+   2. If there are errors that are more technical, out of the actual orchestration, then there are no changes required in the system prompt. 
+   3. If the agent system prompt is following the best practices provided in the reference links above, then no change is needed in the system prompt.
+   4. Do not ever put incorrect information in the system prompt, for example adding incorrect tools that the agent does not have access to, or hardcoding specific rules
+   in the prompt.
+   </reasons_to_change>
 </instructions>
 
 ## Important Guidelines
