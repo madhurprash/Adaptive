@@ -35,7 +35,7 @@ The evaluation uses synthetic questions from `test_data/langsmith_synthetic_ques
 Run the full evaluation suite:
 
 ```bash
-cd evaluate_evolve
+cd evaluate_adaptive
 python run_evaluation.py
 ```
 

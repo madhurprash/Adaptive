@@ -5,7 +5,7 @@ This module provides platform-specific insights agents (LangSmith, Langfuse)
 that connect to their respective MCP servers for observability tool access
 using the langchain-mcp-adapters library.
 
-The factory pattern allows the main evolve_agents.py to dynamically select
+The factory pattern allows the main adaptive_agents.py to dynamically select
 the appropriate agent based on the observability platform being used.
 """
 

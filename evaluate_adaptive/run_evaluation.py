@@ -19,7 +19,7 @@ from io import StringIO
 # Add parent directory to path to import agent
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from evolve import run_agent
+from adaptive import run_agent
 from insights.insights_agents import (
     ObservabilityPlatform,
     get_platform_from_config,
@@ -469,18 +469,18 @@ def main() -> None:
         epilog="""
 Example usage:
     # Auto-detect platform from config or environment
-    uv run python -m evaluate_evolve.run_evaluation
+    uv run python -m evaluate_adaptive.run_evaluation
 
     # Specify platform explicitly
-    uv run python -m evaluate_evolve.run_evaluation --platform langsmith
-    uv run python -m evaluate_evolve.run_evaluation --platform langfuse
+    uv run python -m evaluate_adaptive.run_evaluation --platform langsmith
+    uv run python -m evaluate_adaptive.run_evaluation --platform langfuse
 
     # Run evaluations for all platforms
-    uv run python -m evaluate_evolve.run_evaluation --all-platforms
+    uv run python -m evaluate_adaptive.run_evaluation --all-platforms
 
     # With environment variable
     export LANGSMITH_API_KEY=<key>
-    uv run python -m evaluate_evolve.run_evaluation
+    uv run python -m evaluate_adaptive.run_evaluation
 """
     )
 

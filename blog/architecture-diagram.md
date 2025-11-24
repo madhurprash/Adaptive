@@ -5,7 +5,7 @@
 ```mermaid
 graph TB
     subgraph "User Interface"
-        CLI[CLI Interface<br/>evolve run]
+        CLI[CLI Interface<br/>adaptive run]
         User[User Input]
     end
 
@@ -195,7 +195,7 @@ sequenceDiagram
     participant FS as File System
     participant HITL as HITL Middleware
 
-    U->>CLI: evolve run --session-id xyz
+    U->>CLI: adaptive run --session-id xyz
     CLI->>SG: Initialize with thread_id
 
     SG->>PS: select_platform()
@@ -231,7 +231,7 @@ sequenceDiagram
 
     SG->>RT: route_to_evolution(state)
     RT->>RT: Analyze user question
-    RT-->>SG: Decision: "evolve_prompts"
+    RT-->>SG: Decision: "adapt_prompts"
 
     SG->>RS: select_agent_repository()
     RS->>U: Prompt: Enter repo path/URL

@@ -18,7 +18,7 @@
         "Compare the P50 and P99 latencies across all projects",
         "Which project is the slowest on average?",
         "Show me projects with P99 latency above 50 seconds",
-        "What's the performance difference between evolve.ai and lambda-autotuner-agent?",
+        "What's the performance difference between adaptive and lambda-autotuner-agent?",
         "Rank my projects by performance (latency)",
         "Which projects have acceptable performance (P99 < 30s)?"
       ]
@@ -29,7 +29,7 @@
         "What's the total number of runs across all projects?",
         "Which project has the most recent activity?",
         "Show me projects that have run in the last 24 hours",
-        "What's the run count for evolve.ai in the last 7 days?",
+        "What's the run count for adaptive in the last 7 days?",
         "How many total runs do I have across all projects?"
       ]
     }
@@ -194,7 +194,7 @@
         "What steps are taking too long and can be optimized?",
         "How can I reduce token usage?",
         "What's causing the high P99 latency?",
-        "Should I be concerned about the 16% error rate in evolve.ai?"
+        "Should I be concerned about the 16% error rate in adaptive?"
       ]
     },
     {
@@ -222,9 +222,9 @@
     {
       "category": "root_cause_analysis",
       "questions": [
-        "Investigate why evolve.ai has a 16% error rate - show me failed runs, common patterns, and root causes",
+        "Investigate why adaptive has a 16% error rate - show me failed runs, common patterns, and root causes",
         "Analyze the performance bottleneck in lambda-autotuner-agent - identify slow steps and suggest optimizations",
-        "Compare the performance characteristics of evolve.ai vs lambda-autotuner-agent and explain the differences",
+        "Compare the performance characteristics of adaptive vs lambda-autotuner-agent and explain the differences",
         "Find all runs where latency exceeded 40 seconds, analyze what they have in common, and suggest fixes"
       ]
     },
@@ -264,7 +264,7 @@
       "category": "casual_phrasing",
       "questions": [
         "Why is my lambda-autotuner-agent so slow?",
-        "Is evolve.ai broken? The error rate looks high",
+        "Is adaptive broken? The error rate looks high",
         "How much am I spending on this?",
         "What's going on with this run?",
         "Why did this fail?",
