@@ -4,7 +4,7 @@
 #
 # This script installs the self-healing-agent CLI tool.
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/yourusername/self-healing-agent/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/madhurprash/evolveai/main/scripts/install.sh | bash
 #   or
 #   bash scripts/install.sh
 
@@ -18,7 +18,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO_URL="https://github.com/yourusername/self-healing-agent"
+REPO_URL="https://github.com/madhurprash/evolveai"
 INSTALL_DIR="$HOME/.self-healing-agent"
 BIN_DIR="$HOME/.local/bin"
 VERSION="latest"
