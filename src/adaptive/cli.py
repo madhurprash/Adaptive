@@ -67,14 +67,14 @@ def _run_agent(
         # Add project root to Python path for imports
         sys.path.insert(0, str(project_root))
 
-        # Import the main evolve module
+        # Import the main adaptive module
         # This needs to be done after adding to sys.path
-        from evolve import main as evolve_main
+        from adaptive import main as adaptive_main
 
         logger.info("Starting Adaptive agent...")
 
-        # Call the evolve main function directly with parameters
-        evolve_main(
+        # Call the adaptive main function directly with parameters
+        adaptive_main(
             session_id=session_id,
             debug=debug,
             parse_cli_args=False  # Don't parse CLI args again

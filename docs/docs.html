@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Self-Healing Agent Documentation">
-    <title>Documentation - Self-Healing Agent</title>
+    <meta name="description" content="Adaptive Documentation">
+    <title>Documentation - Adaptive</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <nav class="navbar">
         <div class="container">
             <div class="nav-brand">
-                <h1>Self-Healing Agent</h1>
+                <h1>Adaptive</h1>
             </div>
             <ul class="nav-menu">
                 <li><a href="index.html">Home</a></li>
@@ -19,15 +19,15 @@
                 <li><a href="index.html#quickstart">Quick Start</a></li>
                 <li><a href="blog.html">Blog</a></li>
                 <li><a href="docs.html">Documentation</a></li>
-                <li><a href="https://github.com/madhurprash/evolve.ai" target="_blank">GitHub</a></li>
+                <li><a href="https://github.com/madhurprash/adaptive" target="_blank">GitHub</a></li>
             </ul>
         </div>
     </nav>
 
     <article class="docs-content">
-        <h1>Self-Healing Agent Documentation</h1>
+        <h1>Adaptive Documentation</h1>
 
-        <p>A comprehensive guide to using the Self-Healing Agent system for analyzing and optimizing your AI agents.</p>
+        <p>A comprehensive guide to using the Adaptive system for analyzing and optimizing your AI agents.</p>
 
         <h2>Table of Contents</h2>
         <ul>
@@ -43,7 +43,7 @@
 
         <h2 id="prerequisites">Prerequisites</h2>
 
-        <p>Before installing the Self-Healing Agent, ensure you have:</p>
+        <p>Before installing the Adaptive, ensure you have:</p>
 
         <ul>
             <li><strong>Python 3.12+</strong> (recommended)</li>
@@ -56,7 +56,7 @@
 
         <h3>One-Line Install (Recommended)</h3>
 
-        <pre><code>curl -fsSL https://raw.githubusercontent.com/madhurprash/evolve.ai/main/scripts/install.sh | bash</code></pre>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/madhurprash/adaptive/main/scripts/install.sh | bash</code></pre>
 
         <p>This installer will:</p>
         <ul>
@@ -70,8 +70,8 @@
         <h3>Manual Installation</h3>
 
         <pre><code># Clone the repository
-git clone https://github.com/madhurprash/evolve.ai.git
-cd evolve.ai
+git clone https://github.com/madhurprash/adaptive.git
+cd adaptive
 
 # Install dependencies using uv
 uv sync
@@ -133,30 +133,30 @@ agentcore_memory:
         <h3>Interactive Mode (Default)</h3>
 
         <pre><code># Run with interactive mode
-evolve run
+adaptive run
 
 # Or with session ID
-evolve run --session-id "my-session-123"
+adaptive run --session-id "my-session-123"
 
 # Or using environment variable
 export LANGSMITH_SESSION_ID="my-session-123"
-evolve run</code></pre>
+adaptive run</code></pre>
 
         <h3>With Debug Logging</h3>
 
-        <pre><code>evolve run --debug</code></pre>
+        <pre><code>adaptive run --debug</code></pre>
 
         <h3>Run as Background Daemon</h3>
 
         <pre><code># Check every hour (default)
-evolve daemon
+adaptive daemon
 
 # Custom interval (every 30 minutes)
-evolve daemon --interval 1800</code></pre>
+adaptive daemon --interval 1800</code></pre>
 
         <h3>Example Usage Flow</h3>
 
-        <p>When you run <code>evolve run</code>, you'll be guided through:</p>
+        <p>When you run <code>adaptive run</code>, you'll be guided through:</p>
 
         <ol>
             <li><strong>Platform Selection</strong>: Choose between LangSmith or Langfuse</li>
@@ -166,9 +166,9 @@ evolve daemon --interval 1800</code></pre>
             <li><strong>Approve Changes</strong>: Review and approve prompt modifications (HITL)</li>
         </ol>
 
-        <pre><code>$ evolve run
+        <pre><code>$ adaptive run
 
-Self-Healing Agent - Unified Multi-Agent Workflow (Interactive Mode)
+Adaptive - Unified Multi-Agent Workflow (Interactive Mode)
 ================================================================================
 Workflow: Insights Agent -> Evolution Agent
   1. Insights Agent: Analyzes observability traces and generates insights
@@ -194,20 +194,20 @@ You: Can you optimize the prompts based on these insights?
         <h3>Main Commands</h3>
 
         <pre><code># Run agent once (interactive mode)
-evolve run
+adaptive run
 
 # Run as background daemon
-evolve daemon
+adaptive daemon
 
 # Show version
-evolve version
+adaptive version
 
 # Show current configuration
-evolve config</code></pre>
+adaptive config</code></pre>
 
         <h3>Run Options</h3>
 
-        <pre><code>evolve run [OPTIONS]
+        <pre><code>adaptive run [OPTIONS]
 
 Options:
   --config PATH    Path to configuration file
@@ -216,7 +216,7 @@ Options:
 
         <h3>Daemon Options</h3>
 
-        <pre><code>evolve daemon [OPTIONS]
+        <pre><code>adaptive daemon [OPTIONS]
 
 Options:
   --config PATH       Path to configuration file
@@ -360,8 +360,8 @@ uv run mypy src/</code></pre>
         <h2>Support</h2>
 
         <ul>
-            <li><strong>Issues</strong>: <a href="https://github.com/madhurprash/evolve.ai/issues" target="_blank">GitHub Issues</a></li>
-            <li><strong>Discussions</strong>: <a href="https://github.com/madhurprash/evolve.ai/discussions" target="_blank">GitHub Discussions</a></li>
+            <li><strong>Issues</strong>: <a href="https://github.com/madhurprash/adaptive/issues" target="_blank">GitHub Issues</a></li>
+            <li><strong>Discussions</strong>: <a href="https://github.com/madhurprash/adaptive/discussions" target="_blank">GitHub Discussions</a></li>
         </ul>
 
         <h2>License</h2>
@@ -372,9 +372,9 @@ uv run mypy src/</code></pre>
     <section class="cta">
         <div class="container">
             <h2>Ready to Get Started?</h2>
-            <p>Install the Self-Healing Agent in minutes</p>
+            <p>Install the Adaptive in minutes</p>
             <div class="cta-buttons">
-                <a href="https://github.com/madhurprash/evolve.ai" class="btn btn-primary" target="_blank">View on GitHub</a>
+                <a href="https://github.com/madhurprash/adaptive" class="btn btn-primary" target="_blank">View on GitHub</a>
                 <a href="index.html#quickstart" class="btn btn-secondary">Quick Start Guide</a>
             </div>
         </div>
@@ -384,8 +384,8 @@ uv run mypy src/</code></pre>
         <div class="container">
             <p>Built with Amazon Bedrock, LangChain, and LangGraph</p>
             <div class="footer-links">
-                <a href="https://github.com/madhurprash/evolve.ai" target="_blank">GitHub</a>
-                <a href="https://github.com/madhurprash/evolve.ai/issues" target="_blank">Issues</a>
+                <a href="https://github.com/madhurprash/adaptive" target="_blank">GitHub</a>
+                <a href="https://github.com/madhurprash/adaptive/issues" target="_blank">Issues</a>
                 <a href="blog.html">Blog</a>
                 <a href="index.html">Home</a>
             </div>

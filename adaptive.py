@@ -1,5 +1,5 @@
 """
-Self-Healing Agent - Evolve
+Adaptive - Continuous Optimization for AI Agents
 
 This is the agent that is responsible to do the following high value tasks:
 
@@ -1329,19 +1329,19 @@ def _parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
         args: Optional list of arguments to parse. If None, parses sys.argv.
     """
     parser = argparse.ArgumentParser(
-        description="Self-Healing Agent - Log Curator: Analyze agent execution traces from LangSmith",
+        description="Adaptive - Continuous optimization for AI agents: Analyze agent execution traces from LangSmith",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example usage:
     # Interactive mode (default)
-    python agent.py --session-id "my-session-123"
+    python adaptive.py --session-id "my-session-123"
 
     # Interactive mode with environment variable
     export LANGSMITH_SESSION_ID="my-session-123"
-    python agent.py
+    python adaptive.py
 
     # Enable debug logging
-    python agent.py --session-id "abc123" --debug
+    python adaptive.py --session-id "abc123" --debug
 """
     )
 
@@ -1389,7 +1389,7 @@ def _print_welcome_message(
 ) -> None:
     """Print welcome message for interactive mode."""
     print("\n" + "="*80)
-    print("Self-Healing Agent - Unified Multi-Agent Workflow (Interactive Mode)")
+    print("Adaptive - Unified Multi-Agent Workflow (Interactive Mode)")
     print("="*80)
     print("Workflow: Insights Agent -> Evolution Agent")
     print("  1. Insights Agent: Analyzes observability traces and generates insights")

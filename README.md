@@ -58,7 +58,7 @@ You can also run the agent directly using Python:
 cd ~/.adaptive
 
 # Run with Python
-python evolve.py --session-id your-session-id
+python adaptive.py --session-id your-session-id
 ```
 
 ### Other Commands
