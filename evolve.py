@@ -1322,8 +1322,12 @@ async def run_agent(
     }
 
 
-def _parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
+def _parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
+    """Parse command line arguments.
+
+    Args:
+        args: Optional list of arguments to parse. If None, parses sys.argv.
+    """
     parser = argparse.ArgumentParser(
         description="Self-Healing Agent - Log Curator: Analyze agent execution traces from LangSmith",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1353,7 +1357,7 @@ Example usage:
         help="Enable debug logging"
     )
 
-    return parser.parse_args()
+    return parser.parse_args(args)
 
 
 def _get_session_id(
@@ -1513,17 +1517,30 @@ def _run_interactive_session(
             break
 
 
-def main() -> None:
-    """Main function to run the unified multi-agent workflow."""
-    args = _parse_args()
+def main(
+    session_id: Optional[str] = None,
+    debug: bool = False,
+    parse_cli_args: bool = True
+) -> None:
+    """Main function to run the unified multi-agent workflow.
+
+    Args:
+        session_id: Optional session ID (overrides CLI args if provided)
+        debug: Enable debug logging (overrides CLI args if provided)
+        parse_cli_args: If True, parse CLI arguments. If False, use provided parameters.
+    """
+    if parse_cli_args:
+        args = _parse_args()
+        session_id = session_id or args.session_id
+        debug = debug or args.debug
 
     # Set debug logging if requested
-    if args.debug:
+    if debug:
         logging.getLogger().setLevel(logging.DEBUG)
         logger.debug("Debug logging enabled")
 
     # Get session ID from CLI or environment
-    session_id = _get_session_id(args.session_id)
+    session_id = _get_session_id(session_id)
 
     if not session_id:
         logger.warning("No session ID provided. Analysis may be limited without a specific session.")

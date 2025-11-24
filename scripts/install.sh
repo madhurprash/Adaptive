@@ -4,7 +4,7 @@
 #
 # This script installs the self-healing-agent CLI tool.
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/madhurprash/evolveai/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/madhurprash/evolve.ai/main/scripts/install.sh | bash
 #   or
 #   bash scripts/install.sh
 
@@ -18,7 +18,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO_URL="https://github.com/madhurprash/evolveai"
+REPO_URL="https://github.com/madhurprash/evolve.ai"
 INSTALL_DIR="$HOME/.self-healing-agent"
 BIN_DIR="$HOME/.local/bin"
 VERSION="latest"
@@ -136,16 +136,24 @@ install_package() {
     # Create symlinks in bin directory
     print_info "Creating command symlinks..."
 
-    # Find the installed commands
-    PYTHON_BIN_DIR=$(python3 -c "import site; print(site.USER_BASE + '/bin')")
+    # Find the installed commands - check multiple possible locations
+    VENV_BIN_DIR="$HOME/.venv/bin"
+    PYTHON_BIN_DIR=$(python3 -c "import site; print(site.USER_BASE + '/bin')" 2>/dev/null || echo "")
 
-    if [ -f "$PYTHON_BIN_DIR/self-healing-agent" ]; then
-        ln -sf "$PYTHON_BIN_DIR/self-healing-agent" "$BIN_DIR/self-healing-agent"
-        ln -sf "$PYTHON_BIN_DIR/self-healing-agent" "$BIN_DIR/evolve"
-        print_success "Command symlinks created"
+    # Check which location has the commands
+    if [ -f "$VENV_BIN_DIR/evolve" ]; then
+        COMMAND_BIN_DIR="$VENV_BIN_DIR"
+    elif [ -f "$PYTHON_BIN_DIR/evolve" ]; then
+        COMMAND_BIN_DIR="$PYTHON_BIN_DIR"
     else
         print_warning "Could not find installed commands. You may need to add Python's bin directory to your PATH."
+        return
     fi
+
+    # Create symlinks
+    ln -sf "$COMMAND_BIN_DIR/self-healing-agent" "$BIN_DIR/self-healing-agent"
+    ln -sf "$COMMAND_BIN_DIR/evolve" "$BIN_DIR/evolve"
+    print_success "Command symlinks created from $COMMAND_BIN_DIR"
 }
 
 # Function to update shell configuration

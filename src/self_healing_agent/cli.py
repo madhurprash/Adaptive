@@ -35,21 +35,30 @@ def _get_project_root() -> Path:
 def _run_agent(
     config_file: Optional[str] = None,
     debug: bool = False,
+    session_id: Optional[str] = None,
 ) -> int:
     """Run the self-healing agent.
 
     Args:
         config_file: Path to configuration file
         debug: Enable debug logging
+        session_id: LangSmith session ID to analyze (auto-generated if not provided)
 
     Returns:
         Exit code (0 for success, non-zero for failure)
     """
+    import uuid
+
     try:
         # Set logging level
         if debug:
             logging.getLogger().setLevel(logging.DEBUG)
             logger.debug("Debug mode enabled")
+
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = f"session-{uuid.uuid4().hex[:8]}"
+            logger.info(f"Generated new session ID: {session_id}")
 
         # Get project root
         project_root = _get_project_root()
@@ -64,8 +73,12 @@ def _run_agent(
 
         logger.info("Starting self-healing agent...")
 
-        # Run the agent (evolve.py handles its own argument parsing)
-        evolve_main()
+        # Call the evolve main function directly with parameters
+        evolve_main(
+            session_id=session_id,
+            debug=debug,
+            parse_cli_args=False  # Don't parse CLI args again
+        )
 
         logger.info("Self-healing agent completed successfully")
         return 0
@@ -142,27 +155,34 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Run agent once (interactive mode)
-    self-healing-agent run
+    # Run agent in interactive mode (auto-generates session ID)
+    evolve run
 
-    # Run agent with custom config
-    self-healing-agent run --config /path/to/config.yaml
+    # Run agent with specific session ID
+    evolve run --session-id madhur2039
+
+    # Run agent with debug logging
+    evolve run --debug
 
     # Run as background daemon (checks every hour)
-    self-healing-agent daemon
+    evolve daemon
 
     # Run daemon with custom interval (every 30 minutes)
-    self-healing-agent daemon --interval 1800
+    evolve daemon --interval 1800
 
     # Show version
-    self-healing-agent version
+    evolve version
 
     # Show current configuration
-    self-healing-agent config
+    evolve config
         """
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    subparsers = parser.add_subparsers(
+        dest='command',
+        help='Available commands',
+        required=False
+    )
 
     # Run command
     run_parser = subparsers.add_parser('run', help='Run the agent once')
@@ -175,6 +195,11 @@ Examples:
         '--debug',
         action='store_true',
         help='Enable debug logging'
+    )
+    run_parser.add_argument(
+        '--session-id',
+        type=str,
+        help='LangSmith session ID to analyze (auto-generated if not provided)'
     )
 
     # Daemon command
@@ -205,10 +230,12 @@ Examples:
     args = parser.parse_args()
 
     # Handle commands
-    if args.command == 'run':
+    if args.command == 'run' or args.command is None:
+        # Default to run mode when no subcommand provided
         return _run_agent(
-            config_file=args.config,
-            debug=args.debug
+            config_file=getattr(args, 'config', None),
+            debug=getattr(args, 'debug', False),
+            session_id=getattr(args, 'session_id', None)
         )
     elif args.command == 'daemon':
         return _run_daemon(
