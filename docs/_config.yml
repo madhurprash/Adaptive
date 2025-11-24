@@ -1,0 +1,55 @@
+# GitHub Pages Configuration for Self-Healing Agent
+
+# Site settings
+title: Self-Healing Agent
+description: A multi-agent system for healing and evolving agentic applications over time
+author: Madhur Prashant
+email: your-email@example.com
+
+# Repository
+repository: madhurprash/evolve.ai
+github_username: madhurprash
+
+# Build settings
+markdown: kramdown
+theme: null
+
+# Exclude from processing
+exclude:
+  - README.md
+  - .gitignore
+
+# Include files
+include:
+  - _config.yml
+
+# URL settings (will be updated once GitHub Pages is enabled)
+url: "https://madhurprash.github.io"
+baseurl: "/evolve.ai"
+
+# Social links
+twitter_username: your_twitter
+linkedin_username: your_linkedin
+
+# Google Analytics (optional)
+# google_analytics: UA-XXXXXXXXX-X
+
+# SEO settings
+lang: en
+locale: en_US
+
+# Navigation
+navigation:
+  - title: Home
+    url: /
+  - title: Features
+    url: /#features
+  - title: Quick Start
+    url: /#quickstart
+  - title: Blog
+    url: /blog.html
+  - title: Documentation
+    url: /docs.html
+  - title: GitHub
+    url: https://github.com/madhurprash/evolve.ai
+    external: true

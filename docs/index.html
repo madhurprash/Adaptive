@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Self-Healing Agent - A multi-agent system for healing and evolving agentic applications over time">
+    <title>Self-Healing Agent | Autonomous Agent Optimization</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <h1>Self-Healing Agent</h1>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="#features">Features</a></li>
+                <li><a href="#quickstart">Quick Start</a></li>
+                <li><a href="blog.html">Blog</a></li>
+                <li><a href="docs.html">Documentation</a></li>
+                <li><a href="https://github.com/madhurprash/evolve.ai" target="_blank">GitHub</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1 class="hero-title">Build Self-Healing AI Agents</h1>
+                <p class="hero-subtitle">A multi-agent system that analyzes observability traces, generates actionable insights, and automatically optimizes your agent prompts.</p>
+                <div class="hero-buttons">
+                    <a href="#quickstart" class="btn btn-primary">Get Started</a>
+                    <a href="blog.html" class="btn btn-secondary">Read the Blog</a>
+                </div>
+                <div class="install-command">
+                    <code>curl -fsSL https://raw.githubusercontent.com/madhurprash/evolve.ai/main/scripts/install.sh | bash</code>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <section id="features" class="features">
+        <div class="container">
+            <h2 class="section-title">Key Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Multi-Platform Analysis</h3>
+                    <p>Analyze agent execution traces from LangSmith and Langfuse with intelligent insights about performance and behavior.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔄</div>
+                    <h3>Automatic Optimization</h3>
+                    <p>Automatically optimize system prompts based on observed patterns with human-in-the-loop approval.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💬</div>
+                    <h3>Interactive Mode</h3>
+                    <p>Conversational interface with memory for context-aware analysis across multiple sessions.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Intelligent Routing</h3>
+                    <p>Smart workflow routing determines when evolution is needed based on user intent and insights.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔐</div>
+                    <h3>HITL Approval</h3>
+                    <p>Review detailed diffs and approve changes before any modifications are applied to production prompts.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Continuous Evolution</h3>
+                    <p>Run as a daemon for continuous monitoring and proactive optimization of your agent systems.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="quickstart" class="quickstart">
+        <div class="container">
+            <h2 class="section-title">Quick Start</h2>
+            <div class="quickstart-content">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Install</h3>
+                        <p>Install the Self-Healing Agent with a single command:</p>
+                        <div class="code-block">
+                            <code>curl -fsSL https://raw.githubusercontent.com/madhurprash/evolve.ai/main/scripts/install.sh | bash</code>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Configure</h3>
+                        <p>Set up your environment with AWS credentials and observability platform API keys:</p>
+                        <div class="code-block">
+                            <code>
+# AWS Configuration<br>
+AWS_REGION=us-east-1<br>
+<br>
+# LangSmith or Langfuse<br>
+LANGSMITH_API_KEY=your_api_key_here<br>
+LANGFUSE_PUBLIC_KEY=your_public_key
+                            </code>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Run</h3>
+                        <p>Start analyzing and optimizing your agents:</p>
+                        <div class="code-block">
+                            <code>
+# Interactive mode<br>
+evolve run<br>
+<br>
+# With debug logging<br>
+evolve run --debug<br>
+<br>
+# Background daemon<br>
+evolve daemon
+                            </code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="architecture">
+        <div class="container">
+            <h2 class="section-title">Multi-Agent Architecture</h2>
+            <div class="architecture-content">
+                <p>The system uses specialized agents working together:</p>
+                <div class="agents-grid">
+                    <div class="agent-card">
+                        <h3>Insights Agent</h3>
+                        <p>Analyzes observability traces from LangSmith or Langfuse and generates insights about agent performance, error patterns, and optimization opportunities.</p>
+                    </div>
+                    <div class="agent-card">
+                        <h3>Evolution Agent</h3>
+                        <p>Transforms insights into concrete optimizations by proposing specific changes to system prompts with detailed diffs and approval workflows.</p>
+                    </div>
+                    <div class="agent-card">
+                        <h3>Routing Agent</h3>
+                        <p>Orchestrates workflow between agents, determining when evolution is needed based on user intent and the nature of generated insights.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta">
+        <div class="container">
+            <h2>Ready to Build Self-Healing Agents?</h2>
+            <p>Get started in minutes with our one-line installer</p>
+            <div class="cta-buttons">
+                <a href="https://github.com/madhurprash/evolve.ai" class="btn btn-primary" target="_blank">View on GitHub</a>
+                <a href="docs.html" class="btn btn-secondary">Read Documentation</a>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>Built with Amazon Bedrock, LangChain, and LangGraph</p>
+            <div class="footer-links">
+                <a href="https://github.com/madhurprash/evolve.ai" target="_blank">GitHub</a>
+                <a href="https://github.com/madhurprash/evolve.ai/issues" target="_blank">Issues</a>
+                <a href="blog.html">Blog</a>
+                <a href="docs.html">Docs</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Self-Healing Agent Documentation">
+    <title>Documentation - Self-Healing Agent</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <h1>Self-Healing Agent</h1>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="index.html#features">Features</a></li>
+                <li><a href="index.html#quickstart">Quick Start</a></li>
+                <li><a href="blog.html">Blog</a></li>
+                <li><a href="docs.html">Documentation</a></li>
+                <li><a href="https://github.com/madhurprash/evolve.ai" target="_blank">GitHub</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <article class="docs-content">
+        <h1>Self-Healing Agent Documentation</h1>
+
+        <p>A comprehensive guide to using the Self-Healing Agent system for analyzing and optimizing your AI agents.</p>
+
+        <h2>Table of Contents</h2>
+        <ul>
+            <li><a href="#prerequisites">Prerequisites</a></li>
+            <li><a href="#installation">Installation</a></li>
+            <li><a href="#configuration">Configuration</a></li>
+            <li><a href="#usage">Usage</a></li>
+            <li><a href="#commands">Commands</a></li>
+            <li><a href="#architecture">Architecture</a></li>
+            <li><a href="#advanced">Advanced Features</a></li>
+            <li><a href="#troubleshooting">Troubleshooting</a></li>
+        </ul>
+
+        <h2 id="prerequisites">Prerequisites</h2>
+
+        <p>Before installing the Self-Healing Agent, ensure you have:</p>
+
+        <ul>
+            <li><strong>Python 3.12+</strong> (recommended)</li>
+            <li><strong>AWS credentials</strong> configured with access to Amazon Bedrock</li>
+            <li><strong>Amazon Bedrock Guardrail</strong> with sensitive information filters</li>
+            <li><strong>API access</strong> to LangSmith or Langfuse for observability traces</li>
+        </ul>
+
+        <h2 id="installation">Installation</h2>
+
+        <h3>One-Line Install (Recommended)</h3>
+
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/madhurprash/evolve.ai/main/scripts/install.sh | bash</code></pre>
+
+        <p>This installer will:</p>
+        <ul>
+            <li>Check your Python version</li>
+            <li>Install the uv package manager if needed</li>
+            <li>Clone the repository</li>
+            <li>Install dependencies</li>
+            <li>Set up the CLI commands</li>
+        </ul>
+
+        <h3>Manual Installation</h3>
+
+        <pre><code># Clone the repository
+git clone https://github.com/madhurprash/evolve.ai.git
+cd evolve.ai
+
+# Install dependencies using uv
+uv sync
+
+# Run directly with Python
+python evolve.py --session-id your-session-id</code></pre>
+
+        <h2 id="configuration">Configuration</h2>
+
+        <h3>Environment Variables</h3>
+
+        <p>Create a <code>.env</code> file in the project directory with the following variables:</p>
+
+        <pre><code># AWS Configuration
+AWS_REGION=us-east-1
+AWS_PROFILE=default  # Optional
+
+# LangSmith Configuration (if using LangSmith)
+LANGSMITH_API_KEY=your_api_key_here
+LANGSMITH_PROJECT=your_project_name
+
+# Langfuse Configuration (if using Langfuse)
+LANGFUSE_PUBLIC_KEY=your_public_key
+LANGFUSE_SECRET_KEY=your_secret_key
+LANGFUSE_HOST=https://cloud.langfuse.com
+
+# AgentCore Memory (optional)
+AGENTCORE_MEMORY_ROLE_ARN=arn:aws:iam::123456789:role/AgentCoreMemoryRole</code></pre>
+
+        <h3>Configuration File</h3>
+
+        <p>The agent uses a YAML configuration file located at <code>configs/config.yaml</code>. You can customize:</p>
+
+        <ul>
+            <li>Model IDs for different agents</li>
+            <li>Inference parameters (temperature, max_tokens, etc.)</li>
+            <li>Routing logic configuration</li>
+            <li>Platform-specific settings</li>
+            <li>AgentCore Memory settings</li>
+        </ul>
+
+        <pre><code>routing_configuration:
+  router_model_id: "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+  inference_parameters:
+    temperature: 0.1
+    max_tokens: 500
+    top_p: 0.92
+
+agentcore_memory:
+  enabled: true
+  memory_name: "SelfHealingAgentMemory"
+  region_name: "us-west-2"
+  context_retrieval:
+    top_k_relevant: 3
+    keep_recent_messages: 3</code></pre>
+
+        <h2 id="usage">Usage</h2>
+
+        <h3>Interactive Mode (Default)</h3>
+
+        <pre><code># Run with interactive mode
+evolve run
+
+# Or with session ID
+evolve run --session-id "my-session-123"
+
+# Or using environment variable
+export LANGSMITH_SESSION_ID="my-session-123"
+evolve run</code></pre>
+
+        <h3>With Debug Logging</h3>
+
+        <pre><code>evolve run --debug</code></pre>
+
+        <h3>Run as Background Daemon</h3>
+
+        <pre><code># Check every hour (default)
+evolve daemon
+
+# Custom interval (every 30 minutes)
+evolve daemon --interval 1800</code></pre>
+
+        <h3>Example Usage Flow</h3>
+
+        <p>When you run <code>evolve run</code>, you'll be guided through:</p>
+
+        <ol>
+            <li><strong>Platform Selection</strong>: Choose between LangSmith or Langfuse</li>
+            <li><strong>Ask Questions</strong>: Query your agent traces</li>
+            <li><strong>View Insights</strong>: Get AI-generated insights about agent performance</li>
+            <li><strong>Evolution</strong>: Optionally trigger prompt optimization</li>
+            <li><strong>Approve Changes</strong>: Review and approve prompt modifications (HITL)</li>
+        </ol>
+
+        <pre><code>$ evolve run
+
+Self-Healing Agent - Unified Multi-Agent Workflow (Interactive Mode)
+================================================================================
+Workflow: Insights Agent -> Evolution Agent
+  1. Insights Agent: Analyzes observability traces and generates insights
+  2. Evolution Agent: Optimizes system prompts based on agent performance
+
+[PLATFORM SELECTION] Please select your observability platform:
+   1. LangSmith
+   2. Langfuse
+
+Enter your choice (1 or 2): 1
+✓ Selected: LangSmith
+
+You: What are the main errors in my agent traces?
+
+[Agent analyzes traces and provides insights...]
+
+You: Can you optimize the prompts based on these insights?
+
+[Evolution agent suggests changes and shows patch for approval...]</code></pre>
+
+        <h2 id="commands">Commands</h2>
+
+        <h3>Main Commands</h3>
+
+        <pre><code># Run agent once (interactive mode)
+evolve run
+
+# Run as background daemon
+evolve daemon
+
+# Show version
+evolve version
+
+# Show current configuration
+evolve config</code></pre>
+
+        <h3>Run Options</h3>
+
+        <pre><code>evolve run [OPTIONS]
+
+Options:
+  --config PATH    Path to configuration file
+  --debug          Enable debug logging
+  --help           Show help message</code></pre>
+
+        <h3>Daemon Options</h3>
+
+        <pre><code>evolve daemon [OPTIONS]
+
+Options:
+  --config PATH       Path to configuration file
+  --debug             Enable debug logging
+  --interval SECONDS  Check interval in seconds (default: 3600)
+  --help              Show help message</code></pre>
+
+        <h2 id="architecture">Architecture</h2>
+
+        <p>The system consists of multiple specialized agents working together:</p>
+
+        <h3>Insights Agent</h3>
+        <p>Analyzes observability traces and generates insights about agent performance:</p>
+        <ul>
+            <li>Platform-specific (LangSmith/Langfuse)</li>
+            <li>Uses MCP tools for data access</li>
+            <li>Provides conversational analysis</li>
+            <li>Maintains context with AgentCore Memory</li>
+        </ul>
+
+        <h3>Evolution Agent</h3>
+        <p>Optimizes system prompts based on insights:</p>
+        <ul>
+            <li>Analyzes agent performance patterns</li>
+            <li>Generates prompt improvements</li>
+            <li>HITL approval for changes</li>
+            <li>File system access for prompt updates</li>
+        </ul>
+
+        <h3>Routing Agent</h3>
+        <p>Intelligent workflow routing:</p>
+        <ul>
+            <li>Determines when evolution is needed</li>
+            <li>User intent detection</li>
+            <li>Conditional workflow execution</li>
+        </ul>
+
+        <h2 id="advanced">Advanced Features</h2>
+
+        <h3>Conversation Memory</h3>
+
+        <p>The agent maintains conversation history using AgentCore Memory for:</p>
+        <ul>
+            <li>Semantic search of previous interactions</li>
+            <li>Context-aware responses</li>
+            <li>Long-term learning</li>
+        </ul>
+
+        <h3>Human-in-the-Loop (HITL)</h3>
+
+        <p>Before making any prompt modifications, the agent:</p>
+        <ol>
+            <li>Shows a detailed diff/patch</li>
+            <li>Displays change statistics</li>
+            <li>Optionally opens in VS Code for review</li>
+            <li>Waits for explicit approval</li>
+        </ol>
+
+        <h3>Multi-Platform Support</h3>
+
+        <p>Works with multiple observability platforms:</p>
+        <ul>
+            <li><strong>LangSmith</strong>: Full integration with LangSmith MCP tools</li>
+            <li><strong>Langfuse</strong>: Native Langfuse API integration</li>
+        </ul>
+
+        <h2 id="troubleshooting">Troubleshooting</h2>
+
+        <h3>Command not found</h3>
+
+        <p>If <code>evolve</code> command is not found after installation:</p>
+
+        <pre><code># Option 1: Restart your terminal
+
+# Option 2: Source your shell config
+source ~/.bashrc  # or ~/.zshrc
+
+# Option 3: Add to PATH manually
+export PATH="$HOME/.local/bin:$PATH"</code></pre>
+
+        <h3>Python version issues</h3>
+
+        <p>Ensure Python 3.12+ is installed:</p>
+
+        <pre><code>python3 --version</code></pre>
+
+        <h3>AWS Credentials</h3>
+
+        <p>Ensure AWS credentials are configured:</p>
+
+        <pre><code>aws configure
+# or
+export AWS_PROFILE=your_profile</code></pre>
+
+        <h3>Observability Platform Issues</h3>
+
+        <p><strong>LangSmith:</strong></p>
+        <ul>
+            <li>Verify <code>LANGSMITH_API_KEY</code> is set</li>
+            <li>Check project/session ID exists</li>
+        </ul>
+
+        <p><strong>Langfuse:</strong></p>
+        <ul>
+            <li>Verify <code>LANGFUSE_PUBLIC_KEY</code> and <code>LANGFUSE_SECRET_KEY</code> are set</li>
+            <li>Check <code>LANGFUSE_HOST</code> is correct</li>
+        </ul>
+
+        <h2>Development</h2>
+
+        <h3>Running Tests</h3>
+
+        <pre><code># Install development dependencies
+uv sync
+
+# Run tests (when available)
+uv run pytest</code></pre>
+
+        <h3>Pre-commit Checks</h3>
+
+        <pre><code># Format and lint
+uv run ruff check --fix . && uv run ruff format .
+
+# Security scanning
+uv run bandit -r src/
+
+# Type checking
+uv run mypy src/</code></pre>
+
+        <h2>Contributing</h2>
+
+        <p>Contributions are welcome! Please:</p>
+        <ol>
+            <li>Fork the repository</li>
+            <li>Create a feature branch</li>
+            <li>Make your changes</li>
+            <li>Run pre-commit checks</li>
+            <li>Submit a pull request</li>
+        </ol>
+
+        <h2>Support</h2>
+
+        <ul>
+            <li><strong>Issues</strong>: <a href="https://github.com/madhurprash/evolve.ai/issues" target="_blank">GitHub Issues</a></li>
+            <li><strong>Discussions</strong>: <a href="https://github.com/madhurprash/evolve.ai/discussions" target="_blank">GitHub Discussions</a></li>
+        </ul>
+
+        <h2>License</h2>
+
+        <p>MIT License - see LICENSE file for details</p>
+    </article>
+
+    <section class="cta">
+        <div class="container">
+            <h2>Ready to Get Started?</h2>
+            <p>Install the Self-Healing Agent in minutes</p>
+            <div class="cta-buttons">
+                <a href="https://github.com/madhurprash/evolve.ai" class="btn btn-primary" target="_blank">View on GitHub</a>
+                <a href="index.html#quickstart" class="btn btn-secondary">Quick Start Guide</a>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>Built with Amazon Bedrock, LangChain, and LangGraph</p>
+            <div class="footer-links">
+                <a href="https://github.com/madhurprash/evolve.ai" target="_blank">GitHub</a>
+                <a href="https://github.com/madhurprash/evolve.ai/issues" target="_blank">Issues</a>
+                <a href="blog.html">Blog</a>
+                <a href="index.html">Home</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
