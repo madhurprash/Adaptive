@@ -1,6 +1,6 @@
-# Self-Healing Agent
+# Adaptive
 
-A multi-agent system for healing and evolving agentic applications over time. This tool analyzes observability traces from LangSmith and Langfuse to provide insights and automatically optimize your agent prompts.
+Adaptive - Continuous optimization for AI agents through intelligent observability and automated prompt evolution.
 
 ## Features
 
@@ -20,33 +20,33 @@ A multi-agent system for healing and evolving agentic applications over time. Th
 
 ## Installation
 
-There are multiple ways to install the Self-Healing Agent:
+There are multiple ways to install Adaptive:
 
 ### One-Line Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/madhurprash/evolve.ai/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/madhurprash/adaptive/main/scripts/install.sh | bash
 ```
 
 ## Usage
 
-After installation, you can run the agent using the `evolve` command:
+After installation, you can run the agent using the `adaptive` command:
 
 ### Basic Usage
 
 ```bash
 # Run agent in interactive mode (auto-generates session ID)
-evolve
-evolve run
+adaptive
+adaptive run
 
 # Run agent with a specific session ID
-evolve run --session-id your-session-id
+adaptive run --session-id your-session-id
 
 # Run with debug logging
-evolve run --debug
+adaptive run --debug
 
 # Run with session ID and debug
-evolve run --session-id madhur2039 --debug
+adaptive run --session-id madhur2039 --debug
 ```
 
 ### Alternative: Direct Python Execution
@@ -55,7 +55,7 @@ You can also run the agent directly using Python:
 
 ```bash
 # Navigate to the installation directory
-cd ~/.self-healing-agent
+cd ~/.adaptive
 
 # Run with Python
 python evolve.py --session-id your-session-id
@@ -65,16 +65,16 @@ python evolve.py --session-id your-session-id
 
 ```bash
 # Show version
-evolve version
+adaptive version
 
 # Show current configuration
-evolve config
+adaptive config
 
 # Run as background daemon (checks every hour)
-evolve daemon
+adaptive daemon
 
 # Run daemon with custom interval (every 30 minutes)
-evolve daemon --interval 1800
+adaptive daemon --interval 1800
 ```
 
 ### 1. Configure Environment
@@ -105,35 +105,35 @@ AGENTCORE_MEMORY_ROLE_ARN=arn:aws:iam::123456789:role/AgentCoreMemoryRole
 
 ```bash
 # Run with interactive mode
-evolve run
+adaptive run
 
 # Or with session ID
-evolve run --session-id "my-session-123"
+adaptive run --session-id "my-session-123"
 
 # Or using environment variable
 export LANGSMITH_SESSION_ID="my-session-123"
-evolve run
+adaptive run
 ```
 
 **With Debug Logging:**
 
 ```bash
-evolve run --debug
+adaptive run --debug
 ```
 
 **Run as Background Daemon:**
 
 ```bash
 # Check every hour (default)
-evolve daemon
+adaptive daemon
 
 # Custom interval (every 30 minutes)
-evolve daemon --interval 1800
+adaptive daemon --interval 1800
 ```
 
 ### 3. Example Usage Flow
 
-When you run `evolve run`, you'll be guided through:
+When you run `adaptive run`, you'll be guided through:
 
 1. **Platform Selection**: Choose between LangSmith or Langfuse
 2. **Ask Questions**: Query your agent traces
@@ -144,9 +144,9 @@ When you run `evolve run`, you'll be guided through:
 Example session:
 
 ```bash
-$ evolve run
+$ adaptive run
 
-Self-Healing Agent - Unified Multi-Agent Workflow (Interactive Mode)
+Adaptive - Unified Multi-Agent Workflow (Interactive Mode)
 ================================================================================
 Workflow: Insights Agent -> Evolution Agent
   1. Insights Agent: Analyzes observability traces and generates insights
@@ -158,7 +158,7 @@ Workflow: Insights Agent -> Evolution Agent
    2. Langfuse
 
 Enter your choice (1 or 2): 1
- Selected: LangSmith
+ Selected: LangSmith
 
 You: What are the main errors in my agent traces?
 
@@ -175,22 +175,22 @@ You: Can you optimize the prompts based on these insights?
 
 ```bash
 # Run agent once (interactive mode)
-evolve run
+adaptive run
 
 # Run as background daemon
-evolve daemon
+adaptive daemon
 
 # Show version
-evolve version
+adaptive version
 
 # Show current configuration
-evolve config
+adaptive config
 ```
 
 ### Run Options
 
 ```bash
-evolve run [OPTIONS]
+adaptive run [OPTIONS]
 
 Options:
   --config PATH    Path to configuration file
@@ -201,7 +201,7 @@ Options:
 ### Daemon Options
 
 ```bash
-evolve daemon [OPTIONS]
+adaptive daemon [OPTIONS]
 
 Options:
   --config PATH       Path to configuration file
@@ -232,7 +232,7 @@ routing_configuration:
 
 agentcore_memory:
   enabled: true
-  memory_name: "SelfHealingAgentMemory"
+  memory_name: "AdaptiveMemory"
   region_name: "us-west-2"
   context_retrieval:
     top_k_relevant: 3
@@ -286,7 +286,7 @@ Works with multiple observability platforms:
 
 ### Command not found
 
-If `evolve` command is not found after installation:
+If `adaptive` command is not found after installation:
 
 ```bash
 # Option 1: Restart your terminal
@@ -353,7 +353,7 @@ uv run mypy src/
 
 ## Documentation
 
-- [GitHub Repository](https://github.com/yourusername/self-healing-agent)
+- [GitHub Repository](https://github.com/madhurprash/adaptive)
 - [Configuration Guide](docs/configuration.md) (coming soon)
 - [API Documentation](docs/api.md) (coming soon)
 
@@ -373,8 +373,8 @@ MIT License - see LICENSE file for details
 
 ## Support
 
-- Issues: [GitHub Issues](https://github.com/yourusername/self-healing-agent/issues)
-- Discussions: [GitHub Discussions](https://github.com/yourusername/self-healing-agent/discussions)
+- Issues: [GitHub Issues](https://github.com/madhurprash/adaptive/issues)
+- Discussions: [GitHub Discussions](https://github.com/madhurprash/adaptive/discussions)
 
 ## Acknowledgments
 

@@ -1,7 +1,7 @@
 """
-Self-Healing Agent CLI
+Adaptive CLI
 
-Main command-line interface for the self-healing agent system.
+Main command-line interface for the Adaptive agent optimization system.
 """
 import sys
 import logging
@@ -37,7 +37,7 @@ def _run_agent(
     debug: bool = False,
     session_id: Optional[str] = None,
 ) -> int:
-    """Run the self-healing agent.
+    """Run the Adaptive agent.
 
     Args:
         config_file: Path to configuration file
@@ -71,7 +71,7 @@ def _run_agent(
         # This needs to be done after adding to sys.path
         from evolve import main as evolve_main
 
-        logger.info("Starting self-healing agent...")
+        logger.info("Starting Adaptive agent...")
 
         # Call the evolve main function directly with parameters
         evolve_main(
@@ -80,11 +80,11 @@ def _run_agent(
             parse_cli_args=False  # Don't parse CLI args again
         )
 
-        logger.info("Self-healing agent completed successfully")
+        logger.info("Adaptive agent completed successfully")
         return 0
 
     except Exception as e:
-        logger.exception(f"Error running self-healing agent: {e}")
+        logger.exception(f"Error running Adaptive agent: {e}")
         return 1
 
 
@@ -93,7 +93,7 @@ def _run_daemon(
     debug: bool = False,
     interval: int = 3600,
 ) -> int:
-    """Run the self-healing agent as a background daemon.
+    """Run the Adaptive agent as a background daemon.
 
     Args:
         config_file: Path to configuration file
@@ -106,7 +106,7 @@ def _run_daemon(
     import time
 
     try:
-        logger.info(f"Starting self-healing agent daemon (interval: {interval}s)")
+        logger.info(f"Starting Adaptive agent daemon (interval: {interval}s)")
 
         while True:
             logger.info("Running agent check...")
@@ -131,8 +131,8 @@ def _run_daemon(
 
 def _show_version() -> None:
     """Display version information."""
-    from self_healing_agent import __version__
-    print(f"Self-Healing Agent v{__version__}")
+    from adaptive import __version__
+    print(f"Adaptive v{__version__}")
 
 
 def _show_config() -> None:
@@ -151,30 +151,30 @@ def _show_config() -> None:
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Self-Healing Agent - A multi-agent system for healing and evolving agentic applications",
+        description="Adaptive - Continuous optimization for AI agents through intelligent observability",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     # Run agent in interactive mode (auto-generates session ID)
-    evolve run
+    adaptive run
 
     # Run agent with specific session ID
-    evolve run --session-id madhur2039
+    adaptive run --session-id madhur2039
 
     # Run agent with debug logging
-    evolve run --debug
+    adaptive run --debug
 
     # Run as background daemon (checks every hour)
-    evolve daemon
+    adaptive daemon
 
     # Run daemon with custom interval (every 30 minutes)
-    evolve daemon --interval 1800
+    adaptive daemon --interval 1800
 
     # Show version
-    evolve version
+    adaptive version
 
     # Show current configuration
-    evolve config
+    adaptive config
         """
     )
 

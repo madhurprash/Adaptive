@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Self-Healing Agent Installation Script
+# Adaptive Installation Script
 #
-# This script installs the self-healing-agent CLI tool.
+# This script installs the Adaptive CLI tool.
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/madhurprash/evolve.ai/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/madhurprash/adaptive/main/scripts/install.sh | bash
 #   or
 #   bash scripts/install.sh
 
@@ -18,8 +18,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO_URL="https://github.com/madhurprash/evolve.ai"
-INSTALL_DIR="$HOME/.self-healing-agent"
+REPO_URL="https://github.com/madhurprash/adaptive"
+INSTALL_DIR="$HOME/.adaptive"
 BIN_DIR="$HOME/.local/bin"
 VERSION="latest"
 
@@ -112,7 +112,7 @@ check_uv() {
 
 # Function to install the package
 install_package() {
-    print_info "Installing self-healing-agent..."
+    print_info "Installing Adaptive..."
 
     # Create installation directory
     mkdir -p "$INSTALL_DIR"
@@ -141,9 +141,9 @@ install_package() {
     PYTHON_BIN_DIR=$(python3 -c "import site; print(site.USER_BASE + '/bin')" 2>/dev/null || echo "")
 
     # Check which location has the commands
-    if [ -f "$VENV_BIN_DIR/evolve" ]; then
+    if [ -f "$VENV_BIN_DIR/adaptive" ]; then
         COMMAND_BIN_DIR="$VENV_BIN_DIR"
-    elif [ -f "$PYTHON_BIN_DIR/evolve" ]; then
+    elif [ -f "$PYTHON_BIN_DIR/adaptive" ]; then
         COMMAND_BIN_DIR="$PYTHON_BIN_DIR"
     else
         print_warning "Could not find installed commands. You may need to add Python's bin directory to your PATH."
@@ -151,8 +151,7 @@ install_package() {
     fi
 
     # Create symlinks
-    ln -sf "$COMMAND_BIN_DIR/self-healing-agent" "$BIN_DIR/self-healing-agent"
-    ln -sf "$COMMAND_BIN_DIR/evolve" "$BIN_DIR/evolve"
+    ln -sf "$COMMAND_BIN_DIR/adaptive" "$BIN_DIR/adaptive"
     print_success "Command symlinks created from $COMMAND_BIN_DIR"
 }
 
@@ -181,7 +180,7 @@ update_shell_config() {
         if ! grep -q "$BIN_DIR" "$shell_config"; then
             print_info "Adding $BIN_DIR to PATH in $shell_config"
             echo "" >> "$shell_config"
-            echo "# Self-Healing Agent" >> "$shell_config"
+            echo "# Adaptive" >> "$shell_config"
             echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$shell_config"
             print_success "Updated $shell_config"
         else
@@ -194,16 +193,16 @@ update_shell_config() {
 verify_installation() {
     export PATH="$BIN_DIR:$PATH"
 
-    if command_exists evolve; then
+    if command_exists adaptive; then
         print_success "Installation successful!"
         echo ""
-        print_info "Try running: evolve --help"
+        print_info "Try running: adaptive --help"
         echo ""
         print_info "If the command is not found, you may need to:"
         echo "  1. Open a new terminal, or"
         echo "  2. Run: source ~/.bashrc (or ~/.zshrc)"
     else
-        print_warning "Installation completed but 'evolve' command not found in PATH"
+        print_warning "Installation completed but 'adaptive' command not found in PATH"
         print_info "Please add $BIN_DIR to your PATH and restart your terminal"
     fi
 }
@@ -212,7 +211,7 @@ verify_installation() {
 main() {
     echo ""
     echo "╔══════════════════════════════════════════════════════╗"
-    echo "║     Self-Healing Agent Installation Script         ║"
+    echo "║        Adaptive Installation Script                 ║"
     echo "╚══════════════════════════════════════════════════════╝"
     echo ""
 

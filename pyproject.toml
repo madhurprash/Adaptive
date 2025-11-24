@@ -3,16 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "self-healing-agent"
+name = "adaptive"
 version = "0.1.0"
-description = "A multi-agent system for healing and evolving agentic applications over time"
+description = "Adaptive - Continuous optimization for AI agents through intelligent observability and automated prompt evolution"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
-    {name = "Self-Healing Agent Team"}
+    {name = "Adaptive Team"}
 ]
-keywords = ["ai", "agents", "langchain", "observability", "self-healing", "multi-agent"]
+keywords = ["ai", "agents", "langchain", "observability", "adaptive", "multi-agent", "optimization"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -42,14 +42,13 @@ dependencies = [
 ]
 
 [project.scripts]
-self-healing-agent = "self_healing_agent.cli:main"
-evolve = "self_healing_agent.cli:main"
+adaptive = "adaptive.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/self-healing-agent"
-Documentation = "https://github.com/yourusername/self-healing-agent#readme"
-Repository = "https://github.com/yourusername/self-healing-agent"
-Issues = "https://github.com/yourusername/self-healing-agent/issues"
+Homepage = "https://github.com/madhurprash/adaptive"
+Documentation = "https://github.com/madhurprash/adaptive#readme"
+Repository = "https://github.com/madhurprash/adaptive"
+Issues = "https://github.com/madhurprash/adaptive/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/self_healing_agent"]
+packages = ["src/adaptive"]
