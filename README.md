@@ -22,67 +22,60 @@ A multi-agent system for healing and evolving agentic applications over time. Th
 
 There are multiple ways to install the Self-Healing Agent:
 
-### Method 1: Quick Install (Recommended)
-
-Use the installation script (similar to Claude Code):
+### One-Line Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/self-healing-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/madhurprash/evolve.ai/main/scripts/install.sh | bash
 ```
 
-Or download and run locally:
+## Usage
+
+After installation, you can run the agent using the `evolve` command:
+
+### Basic Usage
 
 ```bash
-git clone https://github.com/yourusername/self-healing-agent.git
-cd self-healing-agent
-bash scripts/install.sh
+# Run agent in interactive mode (auto-generates session ID)
+evolve
+evolve run
+
+# Run agent with a specific session ID
+evolve run --session-id your-session-id
+
+# Run with debug logging
+evolve run --debug
+
+# Run with session ID and debug
+evolve run --session-id madhur2039 --debug
 ```
 
-### Method 2: Using pip with uv
+### Alternative: Direct Python Execution
+
+You can also run the agent directly using Python:
 
 ```bash
-# Install uv if you don't have it
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# Navigate to the installation directory
+cd ~/.self-healing-agent
 
-# Clone the repository
-git clone https://github.com/yourusername/self-healing-agent.git
-cd self-healing-agent
-
-# Install in editable mode
-uv pip install -e .
+# Run with Python
+python evolve.py --session-id your-session-id
 ```
 
-### Method 3: Using pip (traditional)
+### Other Commands
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/self-healing-agent.git
-cd self-healing-agent
+# Show version
+evolve version
 
-# Create a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Show current configuration
+evolve config
 
-# Install the package
-pip install -e .
+# Run as background daemon (checks every hour)
+evolve daemon
+
+# Run daemon with custom interval (every 30 minutes)
+evolve daemon --interval 1800
 ```
-
-### Method 4: Development Install with uv
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/self-healing-agent.git
-cd self-healing-agent
-
-# Install with development dependencies
-uv sync
-```
-
-After installation, you should be able to run either command:
-- `evolve` - Main CLI command
-- `self-healing-agent` - Alternative command name
-
-## Quick Start
 
 ### 1. Configure Environment
 
@@ -159,7 +152,8 @@ Workflow: Insights Agent -> Evolution Agent
   1. Insights Agent: Analyzes observability traces and generates insights
   2. Evolution Agent: Optimizes system prompts based on agent performance
 
-= [PLATFORM SELECTION] Please select your observability platform:
+=
+ [PLATFORM SELECTION] Please select your observability platform:
    1. LangSmith
    2. Langfuse
 

@@ -62,7 +62,7 @@ If the user approves, the changes are applied and the agent execution resumes wi
 
 ## Getting Started Today
 
-For teams interested in implementing this approach, the system is designed for straightforward deployment and integration with existing agent infrastructure. The initial setup requires Python version 3.12 or later, AWS credentials configured with access to Amazon Bedrock, an Amazon Bedrock Guardrail configured with sensitive information filters, and API access to either LangSmith or Langfuse for observability data.
+For teams interesin ated in implementing this approach, the system is designed for straightforward deployment and integration with existing agent infrastructure. The initial setup requires Python version 3.12 or later, AWS credentials configured with access to Amazon Bedrock, an Amazon Bedrock Guardrail configured with sensitive information filters, and API access to either LangSmith or Langfuse for observability data.
 
 ### Quick Installation
 
