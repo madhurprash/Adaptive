@@ -1,0 +1,28 @@
+# Prompt Optimization Agent Configuration
+# Agent responsible for optimizing system prompts based on observability insights
+general:
+  name: "Prompt Optimization Agent"
+  description: "Optimizes system prompts based on observability insights and error analysis"
+
+# Prompt Optimization Agent Model Configuration
+prompt_optimization_agent_model_information:
+  # Default optimization type to use
+  default_optimization_type: "system_prompt"
+  # Optimization-specific prompt templates
+  prompts:
+    # System prompt optimization
+    system_prompt: prompt_templates/evolution/prompt_optimization_system_prompt.txt
+  # Model ID for prompt optimization agent
+  model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+  # Inference parameters for optimization agent
+  inference_parameters:
+    temperature: 0.1
+    max_tokens: 8192
+    top_p: 0.92
+
+  # HITL (Human-in-the-Loop) Configuration
+  # this human in the loop middleware will be used before certain tools are executed, 
+  # for example for read and write tool.
+  hitl:
+    enabled: true
+    config_file: "configs/hitl_config.yaml"

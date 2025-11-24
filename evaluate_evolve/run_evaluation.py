@@ -5,9 +5,12 @@ logging results locally for analysis.
 """
 
 import sys
+import os
 import json
 import time
 import logging
+import argparse
+import asyncio
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -16,7 +19,12 @@ from io import StringIO
 # Add parent directory to path to import agent
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent import run_agent
+from evolve import run_agent
+from insights.insights_agents import (
+    ObservabilityPlatform,
+    get_platform_from_config,
+    get_platform_from_env,
+)
 
 
 # Configure logging
@@ -66,6 +74,60 @@ class _LogCapture:
         self.log_stream.close()
 
 
+def _get_dataset_path(
+    platform: Optional[ObservabilityPlatform] = None,
+) -> Path:
+    """Determine which dataset to load based on platform.
+
+    Args:
+        platform: Optional platform override. If None, auto-detects from config/env
+
+    Returns:
+        Path to the appropriate questions JSON file
+
+    Raises:
+        ValueError: If platform cannot be determined or dataset file doesn't exist
+    """
+    # Determine platform
+    if platform is None:
+        # Try to detect from config first, then env
+        platform = get_platform_from_config()
+        if platform is None:
+            platform = get_platform_from_env()
+
+        if platform is None:
+            raise ValueError(
+                "Could not determine platform. Please specify --platform or set "
+                "observability_platform in config.yaml, or set LANGSMITH_API_KEY "
+                "or LANGFUSE_PUBLIC_KEY environment variable."
+            )
+
+    # Get base directory
+    test_data_dir = Path(__file__).parent / "test_data"
+
+    # Map platform to dataset file
+    dataset_files = {
+        ObservabilityPlatform.LANGSMITH: test_data_dir / "langsmith_synthetic_questions.json",
+        ObservabilityPlatform.LANGFUSE: test_data_dir / "langfuse_synthetic_questions.json",
+    }
+
+    dataset_path = dataset_files.get(platform)
+
+    if dataset_path is None:
+        raise ValueError(f"Unknown platform: {platform}")
+
+    if not dataset_path.exists():
+        raise ValueError(
+            f"Dataset file not found: {dataset_path}\n"
+            f"Platform: {platform.value}"
+        )
+
+    logger.info(f"Using dataset for platform: {platform.value}")
+    logger.info(f"Dataset path: {dataset_path}")
+
+    return dataset_path
+
+
 def _load_questions(
     file_path: Path,
 ) -> List[Dict[str, Any]]:
@@ -111,7 +173,7 @@ def _load_questions(
     return questions
 
 
-def _run_single_question(
+async def _run_single_question(
     question_data: Dict[str, Any],
     thread_id: str,
     logs_dir: Path,
@@ -149,7 +211,7 @@ def _run_single_question(
         # Capture all logs for this question execution
         with _LogCapture(log_file) as log_capture:
             # Run agent
-            result = run_agent(
+            result = await run_agent(
                 user_question=question,
                 session_id=session_id,
                 thread_id=thread_id,
@@ -314,35 +376,44 @@ def _save_results(
             f.write(src.read())
 
 
-def main() -> None:
-    """Main function to run evaluation."""
-    logger.info("Starting Self-Healing Agent evaluation")
+async def _run_evaluation_for_platform(
+    platform: ObservabilityPlatform,
+) -> None:
+    """Run evaluation for a specific platform.
 
-    # Load questions
-    questions_file = Path(__file__).parent / "test_data" / "langsmith_synthetic_questions.json"
+    Args:
+        platform: The observability platform to evaluate
+    """
+    logger.info(f"\n{'=' * 80}")
+    logger.info(f"Starting evaluation for platform: {platform.value}")
+    logger.info(f"{'=' * 80}\n")
+
+    # Load questions for this platform
+    questions_file = _get_dataset_path(platform)
     questions = _load_questions(questions_file)
 
     logger.info(f"Running evaluation on {len(questions)} questions")
     logger.warning("Processing full dataset. This may take a long time.")
 
     # Generate unique thread_id for this evaluation run
-    thread_id = f"eval-{int(time.time())}"
+    thread_id = f"eval-{platform.value}-{int(time.time())}"
     logger.info(f"Using thread_id: {thread_id}")
 
     # Create logs directory for this evaluation run
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path(__file__).parent / "evaluation_results"
+    output_dir = Path(__file__).parent / "evaluation_results" / platform.value
     logs_dir = output_dir / f"logs_{timestamp}"
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Individual question logs will be saved to: {logs_dir}")
 
-    # Get session_id from environment if available
-    import os
-    session_id = os.getenv("LANGSMITH_SESSION_ID")
-    if session_id:
-        logger.info(f"Using session_id from environment: {session_id}")
-    else:
-        logger.warning("No LANGSMITH_SESSION_ID set. Agent may have limited data to analyze.")
+    # Get session_id from environment if available (for Langsmith)
+    session_id = None
+    if platform == ObservabilityPlatform.LANGSMITH:
+        session_id = os.getenv("LANGSMITH_SESSION_ID")
+        if session_id:
+            logger.info(f"Using session_id from environment: {session_id}")
+        else:
+            logger.warning("No LANGSMITH_SESSION_ID set. Agent may have limited data to analyze.")
 
     # Run all questions
     start_time = time.time()
@@ -353,7 +424,7 @@ def main() -> None:
         logger.info(f"Question {i}/{len(questions)}")
         logger.info(f"{'#' * 80}")
 
-        result = _run_single_question(
+        result = await _run_single_question(
             question_data,
             thread_id=thread_id,
             logs_dir=logs_dir,
@@ -368,7 +439,7 @@ def main() -> None:
     failed = len(results) - successful
 
     logger.info(f"\n{'=' * 80}")
-    logger.info("Evaluation Complete")
+    logger.info(f"Evaluation Complete for {platform.value}")
     logger.info(f"{'=' * 80}")
     logger.info(f"Total Questions: {len(results)}")
     logger.info(f"Successful: {successful}")
@@ -385,9 +456,101 @@ def main() -> None:
     # Save results
     _save_results(results, output_dir)
 
-    logger.info("\nEvaluation complete!")
+    logger.info(f"\nEvaluation complete for {platform.value}!")
     logger.info(f"Results saved to: {output_dir}/")
     logger.info(f"Individual question logs saved to: {logs_dir}/")
+
+
+def main() -> None:
+    """Main function to run evaluation."""
+    parser = argparse.ArgumentParser(
+        description="Run evaluation of the Self-Healing Agent",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Example usage:
+    # Auto-detect platform from config or environment
+    uv run python -m evaluate_evolve.run_evaluation
+
+    # Specify platform explicitly
+    uv run python -m evaluate_evolve.run_evaluation --platform langsmith
+    uv run python -m evaluate_evolve.run_evaluation --platform langfuse
+
+    # Run evaluations for all platforms
+    uv run python -m evaluate_evolve.run_evaluation --all-platforms
+
+    # With environment variable
+    export LANGSMITH_API_KEY=<key>
+    uv run python -m evaluate_evolve.run_evaluation
+"""
+    )
+
+    parser.add_argument(
+        "--platform",
+        type=str,
+        choices=["langsmith", "langfuse"],
+        help="Observability platform to evaluate (default: auto-detect from config/env)",
+    )
+
+    parser.add_argument(
+        "--all-platforms",
+        action="store_true",
+        help="Run evaluation for all available platforms",
+    )
+
+    args = parser.parse_args()
+
+    logger.info("Starting Self-Healing Agent evaluation")
+
+    # Determine which platforms to evaluate
+    platforms_to_evaluate = []
+
+    if args.all_platforms:
+        # Run for all platforms
+        logger.info("Running evaluation for ALL platforms")
+        platforms_to_evaluate = [
+            ObservabilityPlatform.LANGSMITH,
+            ObservabilityPlatform.LANGFUSE,
+        ]
+    elif args.platform:
+        # Use specified platform
+        platform = ObservabilityPlatform(args.platform)
+        logger.info(f"Running evaluation for specified platform: {platform.value}")
+        platforms_to_evaluate = [platform]
+    else:
+        # Auto-detect platform
+        logger.info("Auto-detecting platform from config/environment")
+        dataset_path = _get_dataset_path()  # This will auto-detect
+        # Determine platform from the path
+        if "langsmith" in dataset_path.name:
+            platforms_to_evaluate = [ObservabilityPlatform.LANGSMITH]
+        elif "langfuse" in dataset_path.name:
+            platforms_to_evaluate = [ObservabilityPlatform.LANGFUSE]
+
+    # Run evaluation for each platform
+    overall_start = time.time()
+
+    for platform in platforms_to_evaluate:
+        asyncio.run(_run_evaluation_for_platform(platform))
+
+        # Add separator if running multiple platforms
+        if len(platforms_to_evaluate) > 1:
+            logger.info("\n" + "=" * 80 + "\n")
+
+    overall_time = time.time() - overall_start
+
+    # Final summary if multiple platforms
+    if len(platforms_to_evaluate) > 1:
+        logger.info(f"\n{'=' * 80}")
+        logger.info("All Platform Evaluations Complete")
+        logger.info(f"{'=' * 80}")
+        logger.info(f"Platforms evaluated: {[p.value for p in platforms_to_evaluate]}")
+
+        minutes = int(overall_time // 60)
+        seconds = overall_time % 60
+        if minutes > 0:
+            logger.info(f"Total time for all platforms: {minutes} minutes and {seconds:.1f} seconds")
+        else:
+            logger.info(f"Total time for all platforms: {seconds:.1f} seconds")
 
 
 if __name__ == "__main__":

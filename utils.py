@@ -44,21 +44,23 @@ def load_system_prompt(
     """
     try:
         # First try absolute path or relative to current directory
-        if Path(prompt_path).exists():
-            with open(prompt_path, 'r') as f:
-                prompt_content = f.read()
+        prompt_file = Path(prompt_path)
+        if prompt_file.exists():
+            prompt_content = prompt_file.read_text()
             logger.info(f"Successfully loaded system prompt from {prompt_path}")
             return prompt_content
 
-        # If not found, try relative to package directory
-        import pkg_resources
-        package_prompt_path = pkg_resources.resource_filename(
-            "ml_cost_analysis", prompt_path
-        )
-        with open(package_prompt_path, 'r') as f:
-            prompt_content = f.read()
-        logger.info(f"Successfully loaded system prompt from package: {package_prompt_path}")
-        return prompt_content
+        # If not found, try relative to project root
+        # (assuming utils.py is in the root of the project)
+        project_root = Path(__file__).parent
+        project_prompt_path = project_root / prompt_path
+        if project_prompt_path.exists():
+            prompt_content = project_prompt_path.read_text()
+            logger.info(f"Successfully loaded system prompt from project root: {project_prompt_path}")
+            return prompt_content
+
+        # If still not found, raise error
+        raise FileNotFoundError(f"System prompt file not found at {prompt_path}")
     except FileNotFoundError:
         logger.error(f"System prompt file not found at {prompt_path}")
         raise

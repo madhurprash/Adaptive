@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 from langchain_core.messages import HumanMessage
 
-from agent import graph
+from evolve import graph
 
 
 # Configure logging

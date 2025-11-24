@@ -78,17 +78,13 @@ def initialize_agentcore_memory(
                 },
             ]
         )
-
         memory_id = memory["id"]
         logger.info(f"Successfully initialized AgentCore Memory with ID: {memory_id}")
         logger.info(f"Memory strategies: USER_PREFERENCES, SEMANTICS, SESSION_SUMMARY, CUSTOM (ErrorInsights)")
-
         return memory
-
     except Exception as e:
         logger.error(f"Error initializing AgentCore Memory: {e}", exc_info=True)
         raise
-
 
 def get_memory_store(
     memory_id: str,

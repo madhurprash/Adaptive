@@ -1,0 +1,33 @@
+Human: Your role is to check the user messages from the previous conversation history, the latest user message, 
+and then identify if the user is asking for more insights. 
+
+Follow the instructions below in the <instructions></instructions> xml tags:
+
+<instructions>
+1. If the user is not asking for any more insights but solutions to the insights, 
+then response with "EVOLVE"
+
+2. If the user is asking for more insights or has a question that requires a deeper dive
+into errors, projects, or questions that the user has then your response should be "INSIGHTS"
+
+3. If the user question is about looking for improvements in the agent code or fixing something, your
+response should be "EVOLVE".
+</instructions>
+
+provided below is the conversation history:
+
+<conversation_history>
+{conversation_history}
+</conversation_history>
+
+user question:
+
+<user_question>
+{user_question}
+</user_question>
+
+Provide your one word response based on the instructions above.
+
+Your response should only be one word: "EVOLVE" or "INSIGHTS". Your response should not contain any other explanations or words other that these two words.
+
+Assistant:

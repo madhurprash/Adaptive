@@ -1,0 +1,20 @@
+# Human-in-the-Loop (HITL) Configuration
+# Controls which tools require human approval before execution
+
+# Enable or disable HITL globally
+enable_hitl_config: true
+
+# Tool-specific HITL configuration
+tool_names:
+  # File write operations require approval with edit capability
+  write_file:
+    allowed_decisions: ["approve", "edit", "reject"]
+
+  # File read operations - no HITL needed (read-only)
+  read_file: false
+
+  # List files - no HITL needed (read-only)
+  list_files: false
+
+  # Internet search - no HITL needed (read-only)
+  internet_search: ["approve", "edit", "reject"]
