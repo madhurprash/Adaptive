@@ -2057,7 +2057,7 @@ wheels = [
 [[package]]
 name = "self-healing-agent"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "bedrock-agentcore" },
     { name = "boto3" },
@@ -2070,6 +2070,7 @@ dependencies = [
     { name = "langfuse" },
     { name = "langgraph-checkpoint-aws" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "requests" },
     { name = "tavily" },
     { name = "transformers" },
@@ -2089,6 +2090,7 @@ requires-dist = [
     { name = "langfuse", specifier = ">=3.9.3" },
     { name = "langgraph-checkpoint-aws", specifier = ">=1.0.1" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "tavily", specifier = ">=1.1.0" },
     { name = "transformers", specifier = ">=4.30.0" },
