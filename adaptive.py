@@ -18,9 +18,18 @@ import logging
 import difflib
 import asyncio
 import argparse
+from pathlib import Path
+
+# Get the directory where this file is located
+_current_dir = Path(__file__).parent.resolve()
+
+# Add the current directory to sys.path if it's not already there
+if str(_current_dir) not in sys.path:
+    sys.path.insert(0, str(_current_dir))
+
+# Now import from utils and constants (which are in the same directory)
 from utils import *
 from constants import *
-from pathlib import Path
 from typing import Annotated
 from dotenv import load_dotenv
 from langsmith import traceable

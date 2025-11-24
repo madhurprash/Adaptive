@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
-    {name = "Adaptive Team"}
+    {name = "Madhur Prashant"}
 ]
 keywords = ["ai", "agents", "langchain", "observability", "adaptive", "multi-agent", "optimization"]
 classifiers = [
