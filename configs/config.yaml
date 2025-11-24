@@ -1,6 +1,6 @@
 general:
-  name: "evolve.ai"
-  description: "This is the configuration file that contains information about the models and infra used by the evolution agent"
+  name: "adaptive"
+  description: "This is the configuration file that contains information about the models and infra used by the adaptive agent"
 
 # This contains the model information for various agents
 # in our multi agentic system
@@ -78,7 +78,7 @@ deep_research_agent_model_information:
   # The deep research agent can access either a local repository or clone from GitHub
   agent_repository:
     type: "local"  # Options: "local" or "github"
-    local_path: "/Users/madhurpt/Desktop/self-healing-agent"  # Path to local agent repository
+    local_path: "/Users/madhurpt/Desktop/adaptive"  # Path to local agent repository
     github_url: ""  # GitHub URL if type is "github" (e.g., https://github.com/user/repo)
 
 # Routing Configuration
@@ -118,9 +118,9 @@ agentcore_memory:
   # Enable or disable AgentCore Memory (set to false to use in-memory only)
   enabled: true
   # Memory name - unique identifier for this agent's memory
-  memory_name: "SelfHealingAgentMemory"
+  memory_name: "AdaptiveMemory"
   # Description of the memory purpose
-  description: "Conversation memory for self-healing agent with error analysis and insights"
+  description: "Conversation memory for Adaptive agent with error analysis and insights"
   # AWS region for AgentCore Memory service
   region_name: "us-west-2"
   # IAM role ARN with permissions for memory operations

@@ -71,5 +71,5 @@ CLAUDE_4_5_SONNET_HINT: str = "sonnet-4-5"
 # =============================================================================
 
 # These are the user intent constants
-TO_EVOLUTION_HINT: str = "EVOLVE"
+TO_EVOLUTION_HINT: str = "ADAPT"
 CONTINUE_WITH_INSIGHTS_HINT: str = "INSIGHTS"

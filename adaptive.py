@@ -1191,7 +1191,7 @@ def route_to_evolution(
         state: UnifiedAgentState containing user_question and insights
 
     Returns:
-        "evolve_prompts" to route to evolution agent, or END to skip it
+        "adapt_prompts" to route to evolution agent, or END to skip it
     """
     print("\n🚦 [ROUTING] Deciding whether to invoke prompt evolution...")
     user_question = state.get("user_question", "")
@@ -1215,11 +1215,11 @@ def route_to_evolution(
         if "ROUTE_TO_RESEARCH" in routing_decision or "ROUTE_TO_EVOLUTION" in routing_decision:
             print("➡️  [ROUTING] Decision: Routing to prompt evolution agent")
             logger.info("Routing to prompt evolution agent")
-            return "evolve_prompts"
+            return "adapt_prompts"
         elif TO_EVOLUTION_HINT in state["spec_insights_marker"]:
             print("➡️  [ROUTING] Decision: Routing to prompt evolution agent")
             logger.info("Routing to prompt evolution agent")
-            return "evolve_prompts"
+            return "adapt_prompts"
         else:
             print("✋ [ROUTING] Decision: Skipping evolution, ending workflow")
             logger.info("Skipping evolution agent, ending workflow")
@@ -1243,7 +1243,7 @@ def _build_graph() -> StateGraph:
     workflow.add_node("select_platform", select_platform)
     workflow.add_node("select_agent_repository", select_agent_repository)
     workflow.add_node("get_insights", get_insights)
-    workflow.add_node("evolve_prompts", evolution_engine)
+    workflow.add_node("adapt_prompts", evolution_engine)
 
     # Define edges - platform selection happens first
     workflow.add_edge(START, "select_platform")
@@ -1256,14 +1256,14 @@ def _build_graph() -> StateGraph:
         "get_insights",
         route_to_evolution,
         {
-            "evolve_prompts": "select_agent_repository",  # Route to repo selection first
+            "adapt_prompts": "select_agent_repository",  # Route to repo selection first
             END: END  # Skip repo selection if not evolving
         }
     )
-    
+
     # After selecting repo, go to evolution
-    workflow.add_edge("select_agent_repository", "evolve_prompts")
-    workflow.add_edge("evolve_prompts", END)
+    workflow.add_edge("select_agent_repository", "adapt_prompts")
+    workflow.add_edge("adapt_prompts", END)
     
     logger.info("Graph built successfully with conditional routing and memory checkpointer")
     return workflow.compile(checkpointer=memory)
