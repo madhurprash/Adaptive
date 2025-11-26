@@ -1,62 +1,142 @@
 # Quick Start Guide
 
-Get started with Adaptive in 5 minutes!
+## For You (Admin) - First Time Setup
 
-## Installation
+### 1. Create Cognito User Pool
 
-Choose your preferred installation method:
-
-### One-Line Install (Recommended)
+Run the automated setup script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/madhurprash/adaptive/main/scripts/install.sh | bash
+./scripts/setup_cognito.sh
 ```
 
-## Usage
+This will:
+- ✅ Create a Cognito User Pool
+- ✅ Create an App Client
+- ✅ Save configuration to `~/.adaptive/cognito_config.sh`
 
-After installation, you can run the agent using the `adaptive` command:
+### 2. Add to Your Shell Config
 
-### Basic Usage
+Add this line to your `~/.bashrc` or `~/.zshrc`:
 
 ```bash
-# Run agent in interactive mode (auto-generates session ID)
+source ~/.adaptive/cognito_config.sh
+```
+
+Reload your shell:
+
+```bash
+source ~/.bashrc  # or ~/.zshrc
+```
+
+### 3. Test It
+
+```bash
+# Create a test account
+adaptive auth signup
+
+# Check AWS Console to see your user:
+# https://console.aws.amazon.com/cognito/
+```
+
+**That's it! You're done.** 🎉
+
+---
+
+## For End Users
+
+### 1. Install
+
+```bash
+pip install adaptive
+```
+
+### 2. Create Account
+
+```bash
+adaptive auth signup
+```
+
+Follow the prompts for email, name, and password.
+
+### 3. Verify Email
+
+Check your email for a verification code, then:
+
+```bash
+adaptive auth verify
+```
+
+### 4. Login & Use
+
+```bash
+adaptive auth login
 adaptive
-adaptive run
-
-# Run agent with a specific session ID
-adaptive run --session-id your-session-id
-
-# Run with debug logging
-adaptive run --debug
-
-# Run with session ID and debug
-adaptive run --session-id madhur2039 --debug
 ```
 
-### Alternative: Direct Python Execution
+**Done!** 🚀
 
-You can also run the agent directly using Python:
+---
 
+## Admin Management
+
+### View All Users
+
+AWS Console → Cognito → Your User Pool → Users
+
+### Manage a User
+
+Select user → Actions:
+- Disable user
+- Delete user
+- Resend verification code
+
+### View Metrics
+
+Your User Pool → Metrics tab
+
+---
+
+## Common Commands
+
+### Authentication
 ```bash
-# Navigate to the installation directory
-cd ~/.adaptive
-
-# Run with Python
-python adaptive.py --session-id your-session-id
+adaptive auth signup    # Create account
+adaptive auth login     # Login
+adaptive auth verify    # Verify email
+adaptive auth status    # Check status
+adaptive auth logout    # Logout
 ```
 
-### Other Commands
-
+### Configuration
 ```bash
-# Show version
-adaptive version
-
-# Show current configuration
-adaptive config
-
-# Run as background daemon (checks every hour)
-adaptive daemon
-
-# Run daemon with custom interval (every 30 minutes)
-adaptive daemon --interval 1800
+adaptive config show              # View config
+adaptive config set platform X    # Set platform
+adaptive config set-key langsmith # Store API key
 ```
+
+### Running
+```bash
+adaptive           # Run agent
+adaptive run       # Run explicitly
+adaptive --help    # Show help
+```
+
+---
+
+## Support
+
+- **Setup issues**: See `ADMIN_SETUP.md`
+- **User guide**: See `USER_GUIDE.md`
+- **Architecture**: See `ARCHITECTURE.md`
+- **Full docs**: See `IMPLEMENTATION_SUMMARY.md`
+
+---
+
+## That's It!
+
+Simple multi-user CLI tool with Cognito authentication.
+
+No backend server needed. No database. Just Cognito + CLI.
+
+**Free for up to 50,000 users per month.**

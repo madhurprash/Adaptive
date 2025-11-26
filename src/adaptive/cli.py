@@ -6,6 +6,7 @@ Simple, elegant CLI for Adaptive agent optimization system.
 import argparse
 import getpass
 import logging
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -188,6 +189,7 @@ def _cmd_config_delete_key(args) -> int:
 
 def _cmd_auth_signup(args) -> int:
     """Create new account with email."""
+    # Use Cognito directly for CLI tool
     auth = CognitoAuthManager()
 
     email = args.email or input("Email: ").strip()
@@ -270,6 +272,7 @@ def _cmd_auth_verify(args) -> int:
 def _cmd_auth_logout() -> int:
     """Log out."""
     auth = CognitoAuthManager()
+
     if auth.logout():
         return 0
     return 1
