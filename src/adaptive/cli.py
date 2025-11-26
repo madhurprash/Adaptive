@@ -1,13 +1,19 @@
 """
-Adaptive CLI
+Adaptive CLI - Simplified version inspired by Claude Code.
 
-Main command-line interface for the Adaptive agent optimization system.
+Simple, elegant CLI for Adaptive agent optimization system.
 """
-import sys
-import logging
 import argparse
+import getpass
+import logging
+import sys
+import uuid
 from pathlib import Path
 from typing import Optional
+
+from .auth import AuthManager
+from .config_manager import ConfigManager
+
 
 # Configure logging
 logging.basicConfig(
@@ -19,8 +25,6 @@ logger = logging.getLogger(__name__)
 
 def _get_project_root() -> Path:
     """Get the project root directory."""
-    # When installed, we need to find the config files
-    # Check if we're in development mode or installed
     current_file = Path(__file__).resolve()
 
     # Try to find the project root by looking for pyproject.toml
@@ -33,23 +37,15 @@ def _get_project_root() -> Path:
 
 
 def _run_agent(
-    config_file: Optional[str] = None,
     debug: bool = False,
     session_id: Optional[str] = None,
 ) -> int:
-    """Run the Adaptive agent.
-
-    Args:
-        config_file: Path to configuration file
-        debug: Enable debug logging
-        session_id: LangSmith session ID to analyze (auto-generated if not provided)
-
-    Returns:
-        Exit code (0 for success, non-zero for failure)
-    """
-    import uuid
-
+    """Run the Adaptive agent."""
     try:
+        # Ensure user is authenticated
+        auth = AuthManager()
+        auth.ensure_authenticated()
+
         # Set logging level
         if debug:
             logging.getLogger().setLevel(logging.DEBUG)
@@ -68,16 +64,15 @@ def _run_agent(
         sys.path.insert(0, str(project_root))
 
         # Import the main adaptive module
-        # This needs to be done after adding to sys.path
         from adaptive import main as adaptive_main
 
         logger.info("Starting Adaptive agent...")
 
-        # Call the adaptive main function directly with parameters
+        # Call the adaptive main function
         adaptive_main(
             session_id=session_id,
             debug=debug,
-            parse_cli_args=False  # Don't parse CLI args again
+            parse_cli_args=False,
         )
 
         logger.info("Adaptive agent completed successfully")
@@ -88,171 +83,251 @@ def _run_agent(
         return 1
 
 
-def _run_daemon(
-    config_file: Optional[str] = None,
-    debug: bool = False,
-    interval: int = 3600,
-) -> int:
-    """Run the Adaptive agent as a background daemon.
+def _cmd_config_show() -> int:
+    """Show current configuration."""
+    config = ConfigManager()
+    config.show()
+    return 0
 
-    Args:
-        config_file: Path to configuration file
-        debug: Enable debug logging
-        interval: Check interval in seconds (default: 3600 = 1 hour)
 
-    Returns:
-        Exit code (0 for success, non-zero for failure)
-    """
-    import time
+def _cmd_config_set(args) -> int:
+    """Set a configuration value."""
+    config = ConfigManager()
 
-    try:
-        logger.info(f"Starting Adaptive agent daemon (interval: {interval}s)")
-
-        while True:
-            logger.info("Running agent check...")
-            exit_code = _run_agent(
-                config_file=config_file,
-                debug=debug
-            )
-
-            if exit_code != 0:
-                logger.warning(f"Agent run failed with exit code {exit_code}")
-
-            logger.info(f"Waiting {interval} seconds until next check...")
-            time.sleep(interval)
-
-    except KeyboardInterrupt:
-        logger.info("Daemon stopped by user")
-        return 0
-    except Exception as e:
-        logger.exception(f"Daemon error: {e}")
+    if args.key == "model":
+        config.set("model_id", args.value)
+        print(f"✅ Model set to: {args.value}")
+    elif args.key == "platform":
+        if args.value not in ["langsmith", "langfuse", "mlflow"]:
+            print("❌ Platform must be one of: langsmith, langfuse, mlflow")
+            return 1
+        config.set("platform", args.value)
+        print(f"✅ Platform set to: {args.value}")
+    elif args.key == "temperature":
+        config.set("temperature", args.value)
+        print(f"✅ Temperature set to: {args.value}")
+    elif args.key == "max_tokens":
+        config.set("max_tokens", args.value)
+        print(f"✅ Max tokens set to: {args.value}")
+    else:
+        print(f"❌ Unknown configuration key: {args.key}")
+        print("Available keys: model, platform, temperature, max_tokens")
         return 1
+
+    return 0
+
+
+def _cmd_config_set_api_key(args) -> int:
+    """Set an API key for a platform."""
+    config = ConfigManager()
+
+    # If API key not provided, prompt for it
+    api_key = args.value
+    if not api_key:
+        api_key = getpass.getpass(f"Enter API key for {args.platform}: ")
+
+    if not api_key:
+        print("❌ API key is required")
+        return 1
+
+    config.set_api_key(args.platform, api_key)
+    print(f"✅ API key for {args.platform} stored successfully")
+    return 0
+
+
+def _cmd_config_list_keys() -> int:
+    """List stored API keys."""
+    config = ConfigManager()
+    platforms = config.list_api_keys()
+
+    print("\n" + "=" * 70)
+    print("STORED API KEYS")
+    print("=" * 70)
+    if platforms:
+        for platform in platforms:
+            print(f"  ✓ {platform}")
+    else:
+        print("  No API keys stored")
+    print("=" * 70 + "\n")
+    return 0
+
+
+def _cmd_config_delete_key(args) -> int:
+    """Delete an API key."""
+    config = ConfigManager()
+
+    # Confirm deletion
+    confirm = input(f"Delete API key for {args.platform}? (y/N): ")
+    if confirm.lower() != 'y':
+        print("Cancelled")
+        return 0
+
+    if config.delete_api_key(args.platform):
+        print(f"✅ API key for {args.platform} deleted")
+    else:
+        print(f"❌ No API key found for {args.platform}")
+        return 1
+
+    return 0
+
+
+def _cmd_auth_login() -> int:
+    """Log in with Google OAuth."""
+    auth = AuthManager()
+    if auth.login_with_google():
+        return 0
+    return 1
+
+
+def _cmd_auth_logout() -> int:
+    """Log out."""
+    auth = AuthManager()
+    if auth.logout():
+        return 0
+    return 1
+
+
+def _cmd_auth_status() -> int:
+    """Show authentication status."""
+    auth = AuthManager()
+    auth.show_status()
+    return 0
 
 
 def _show_version() -> None:
     """Display version information."""
-    from adaptive import __version__
-    print(f"Adaptive v{__version__}")
-
-
-def _show_config() -> None:
-    """Display current configuration."""
-    project_root = _get_project_root()
-    config_file = project_root / "configs" / "config.yaml"
-
-    if config_file.exists():
-        print(f"Configuration file: {config_file}")
-        with open(config_file, 'r') as f:
-            print(f.read())
-    else:
-        print(f"No configuration file found at: {config_file}")
+    try:
+        from adaptive import __version__
+        print(f"Adaptive v{__version__}")
+    except ImportError:
+        print("Adaptive (version unknown)")
 
 
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Adaptive - Continuous optimization for AI agents through intelligent observability",
+        prog="adaptive",
+        description="Adaptive - Continuous optimization for AI agents",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Run agent in interactive mode (auto-generates session ID)
+    # First time - Authenticate with Google
+    adaptive auth login
+
+    # Initial setup
+    adaptive config set model us.anthropic.claude-sonnet-4-20250514-v1:0
+    adaptive config set platform langsmith
+    adaptive config set-key langsmith
+
+    # Run agent (will prompt for auth if not logged in)
     adaptive run
 
-    # Run agent with specific session ID
-    adaptive run --session-id madhur2039
+    # View configuration and auth status
+    adaptive config show
+    adaptive auth status
 
-    # Run agent with debug logging
-    adaptive run --debug
+    # Manage API keys
+    adaptive config set-key langfuse
+    adaptive config list-keys
 
-    # Run as background daemon (checks every hour)
-    adaptive daemon
-
-    # Run daemon with custom interval (every 30 minutes)
-    adaptive daemon --interval 1800
-
-    # Show version
-    adaptive version
-
-    # Show current configuration
-    adaptive config
-        """
+For more information, visit: https://github.com/madhurprash/adaptive
+        """,
     )
 
-    subparsers = parser.add_subparsers(
-        dest='command',
-        help='Available commands',
-        required=False
-    )
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # Run command
-    run_parser = subparsers.add_parser('run', help='Run the agent once')
-    run_parser.add_argument(
-        '--config',
-        type=str,
-        help='Path to configuration file'
-    )
-    run_parser.add_argument(
-        '--debug',
-        action='store_true',
-        help='Enable debug logging'
-    )
-    run_parser.add_argument(
-        '--session-id',
-        type=str,
-        help='LangSmith session ID to analyze (auto-generated if not provided)'
-    )
+    # ========================================================================
+    # AUTH COMMAND
+    # ========================================================================
+    auth_parser = subparsers.add_parser("auth", help="Manage authentication")
+    auth_subparsers = auth_parser.add_subparsers(dest="auth_command", required=True)
 
-    # Daemon command
-    daemon_parser = subparsers.add_parser('daemon', help='Run the agent as a background daemon')
-    daemon_parser.add_argument(
-        '--config',
-        type=str,
-        help='Path to configuration file'
-    )
-    daemon_parser.add_argument(
-        '--debug',
-        action='store_true',
-        help='Enable debug logging'
-    )
-    daemon_parser.add_argument(
-        '--interval',
-        type=int,
-        default=3600,
-        help='Check interval in seconds (default: 3600 = 1 hour)'
-    )
+    # auth login
+    auth_subparsers.add_parser("login", help="Log in with Google")
 
-    # Version command
-    subparsers.add_parser('version', help='Show version information')
+    # auth logout
+    auth_subparsers.add_parser("logout", help="Log out")
 
-    # Config command
-    subparsers.add_parser('config', help='Show current configuration')
+    # auth status
+    auth_subparsers.add_parser("status", help="Show authentication status")
 
+    # ========================================================================
+    # CONFIG COMMAND
+    # ========================================================================
+    config_parser = subparsers.add_parser("config", help="Manage configuration")
+    config_subparsers = config_parser.add_subparsers(dest="config_command", required=True)
+
+    # config show
+    config_subparsers.add_parser("show", help="Show current configuration")
+
+    # config set
+    set_parser = config_subparsers.add_parser("set", help="Set configuration value")
+    set_parser.add_argument("key", help="Configuration key (model, platform, temperature, max_tokens)")
+    set_parser.add_argument("value", help="Configuration value")
+
+    # config set-key
+    set_key_parser = config_subparsers.add_parser("set-key", help="Store API key for platform")
+    set_key_parser.add_argument("platform", help="Platform name (langsmith, langfuse, databricks, etc.)")
+    set_key_parser.add_argument("value", nargs="?", help="API key (will prompt if not provided)")
+
+    # config list-keys
+    config_subparsers.add_parser("list-keys", help="List platforms with stored API keys")
+
+    # config delete-key
+    delete_key_parser = config_subparsers.add_parser("delete-key", help="Delete API key for platform")
+    delete_key_parser.add_argument("platform", help="Platform name")
+
+    # ========================================================================
+    # RUN COMMAND
+    # ========================================================================
+    run_parser = subparsers.add_parser("run", help="Run the agent")
+    run_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    run_parser.add_argument("--session-id", type=str, help="Session ID (auto-generated if not provided)")
+
+    # ========================================================================
+    # VERSION COMMAND
+    # ========================================================================
+    subparsers.add_parser("version", help="Show version")
+
+    # Parse arguments
     args = parser.parse_args()
 
     # Handle commands
-    if args.command == 'run' or args.command is None:
-        # Default to run mode when no subcommand provided
-        return _run_agent(
-            config_file=getattr(args, 'config', None),
-            debug=getattr(args, 'debug', False),
-            session_id=getattr(args, 'session_id', None)
-        )
-    elif args.command == 'daemon':
-        return _run_daemon(
-            config_file=args.config,
-            debug=args.debug,
-            interval=args.interval
-        )
-    elif args.command == 'version':
+    if not args.command:
+        parser.print_help()
+        return 0
+
+    if args.command == "auth":
+        if args.auth_command == "login":
+            return _cmd_auth_login()
+        elif args.auth_command == "logout":
+            return _cmd_auth_logout()
+        elif args.auth_command == "status":
+            return _cmd_auth_status()
+
+    elif args.command == "config":
+        if args.config_command == "show":
+            return _cmd_config_show()
+        elif args.config_command == "set":
+            return _cmd_config_set(args)
+        elif args.config_command == "set-key":
+            return _cmd_config_set_api_key(args)
+        elif args.config_command == "list-keys":
+            return _cmd_config_list_keys()
+        elif args.config_command == "delete-key":
+            return _cmd_config_delete_key(args)
+
+    elif args.command == "run":
+        return _run_agent(debug=args.debug, session_id=args.session_id)
+
+    elif args.command == "version":
         _show_version()
         return 0
-    elif args.command == 'config':
-        _show_config()
-        return 0
+
     else:
         parser.print_help()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

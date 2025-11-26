@@ -46,6 +46,7 @@ class ObservabilityPlatform(Enum):
     """Supported observability platforms."""
     LANGSMITH = "langsmith"
     LANGFUSE = "langfuse"
+    MLFLOW = "mlflow"
 
 class InsightsAgentFactory:
     """
@@ -214,17 +215,34 @@ class InsightsAgentFactory:
         logger.info(f"Creating MCP tools for {platform.value}...")
 
         try:
-            # Determine MCP server script path based on platform using constants
+            # Determine MCP server configuration based on platform using constants
             if platform == ObservabilityPlatform.LANGSMITH:
-                server_script = LANGSMITH_MCP_SERVER_PATH
+                server_config = {
+                    "transport": "stdio",
+                    "command": MCP_SERVER_COMMAND,
+                    "args": MCP_SERVER_BASE_ARGS + [LANGSMITH_MCP_SERVER_PATH],
+                }
                 server_name = "langsmith"
+                logger.info(f"Connecting to custom LangSmith MCP server: {LANGSMITH_MCP_SERVER_PATH}")
             elif platform == ObservabilityPlatform.LANGFUSE:
-                server_script = LANGFUSE_MCP_SERVER_PATH
+                server_config = {
+                    "transport": "stdio",
+                    "command": MCP_SERVER_COMMAND,
+                    "args": MCP_SERVER_BASE_ARGS + [LANGFUSE_MCP_SERVER_PATH],
+                }
                 server_name = "langfuse"
+                logger.info(f"Connecting to custom Langfuse MCP server: {LANGFUSE_MCP_SERVER_PATH}")
+            elif platform == ObservabilityPlatform.MLFLOW:
+                # Use official MLflow MCP server
+                server_config = {
+                    "transport": "stdio",
+                    "command": MLFLOW_MCP_COMMAND,
+                    "args": MLFLOW_MCP_ARGS,
+                }
+                server_name = "mlflow"
+                logger.info(f"Connecting to official MLflow MCP server via: {MLFLOW_MCP_COMMAND} {' '.join(MLFLOW_MCP_ARGS)}")
             else:
                 raise ValueError(f"Unsupported platform: {platform}")
-
-            logger.info(f"Connecting to MCP server: {server_script}")
 
             # Prepare environment variables for the MCP server subprocess
             # The subprocess needs access to API keys from the parent environment
@@ -237,21 +255,23 @@ class InsightsAgentFactory:
                 "LANGSMITH_API_KEY": os.getenv("LANGSMITH_API_KEY", ""),
                 "LANGSMITH_TRACING": os.getenv("LANGSMITH_TRACING", ""),
                 "LANGCHAIN_PROJECT": os.getenv("LANGCHAIN_PROJECT", ""),
+                # MLflow (Databricks) credentials
+                "DATABRICKS_HOST": os.getenv("DATABRICKS_HOST", ""),
+                "DATABRICKS_TOKEN": os.getenv("DATABRICKS_TOKEN", ""),
+                "MLFLOW_TRACKING_URI": os.getenv("MLFLOW_TRACKING_URI", "databricks"),
             }
             # Remove empty values to avoid passing empty strings
             subprocess_env = {k: v for k, v in subprocess_env.items() if v}
 
             logger.info(f"Passing environment variables to MCP server: {list(subprocess_env.keys())}")
 
+            # Add environment variables to server config
+            server_config["env"] = subprocess_env
+
             # Create MultiServerMCPClient with stdio transport
             # Store client reference to keep connection alive
             self._mcp_client = MultiServerMCPClient({
-                server_name: {
-                    "transport": "stdio",
-                    "command": MCP_SERVER_COMMAND,
-                    "args": MCP_SERVER_BASE_ARGS + [server_script],
-                    "env": subprocess_env,
-                }
+                server_name: server_config
             })
 
             # Get tools from the MCP client
@@ -377,10 +397,12 @@ async def create_insights_agent_for_platform(
         platform_enum = ObservabilityPlatform.LANGSMITH
     elif platform_lower == "langfuse":
         platform_enum = ObservabilityPlatform.LANGFUSE
+    elif platform_lower == "mlflow":
+        platform_enum = ObservabilityPlatform.MLFLOW
     else:
         raise ValueError(
             f"Unsupported platform: {platform}. "
-            f"Supported platforms: langsmith, langfuse"
+            f"Supported platforms: langsmith, langfuse, mlflow"
         )
 
     # Create factory and agent
@@ -417,13 +439,14 @@ def get_platform_from_env() -> str:
     - OBSERVABILITY_PLATFORM env var
     - LANGSMITH_API_KEY presence -> langsmith
     - LANGFUSE_PUBLIC_KEY presence -> langfuse
+    - DATABRICKS_HOST presence -> mlflow
 
     Returns:
-        Platform name ("langsmith" or "langfuse")
+        Platform name ("langsmith", "langfuse", or "mlflow")
     """
     # Check explicit env var
     platform = os.getenv("OBSERVABILITY_PLATFORM", "").lower()
-    if platform in ["langsmith", "langfuse"]:
+    if platform in ["langsmith", "langfuse", "mlflow"]:
         logger.info(f"Using platform from OBSERVABILITY_PLATFORM: {platform}")
         return platform
 
@@ -435,6 +458,10 @@ def get_platform_from_env() -> str:
     if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
         logger.info("Detected LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY, using langfuse platform")
         return "langfuse"
+
+    if os.getenv("DATABRICKS_HOST") and os.getenv("DATABRICKS_TOKEN"):
+        logger.info("Detected DATABRICKS_HOST and DATABRICKS_TOKEN, using mlflow platform")
+        return "mlflow"
 
     # Default to langsmith
     logger.warning("No platform detected, defaulting to langsmith")
@@ -498,7 +525,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Insights Agent Factory")
     parser.add_argument(
         "--platform",
-        choices=["langsmith", "langfuse"],
+        choices=["langsmith", "langfuse", "mlflow"],
         help="Observability platform to test"
     )
     args = parser.parse_args()

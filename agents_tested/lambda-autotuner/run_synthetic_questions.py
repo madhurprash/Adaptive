@@ -4,6 +4,7 @@ This script loads questions from the synthetic questions file and runs
 the agent for each one, saving the responses.
 """
 
+import argparse
 import json
 import logging
 import time
@@ -12,7 +13,9 @@ from pathlib import Path
 import yaml
 from langchain_core.messages import HumanMessage
 
-from adaptive import graph
+from agent import graph
+from mlflow_integration import initialize_mlflow
+from mlflow_integration.mlflow_tracer import create_trace_context, log_question_evaluation, annotate_span
 
 
 # Configure logging
@@ -24,12 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    """Load configuration from config.yaml.
+    """Load configuration from configs/config.yaml.
 
     Returns:
         Configuration dictionary
     """
-    config_path = Path(__file__).parent / "config.yaml"
+    config_path = Path(__file__).parent / "configs" / "config.yaml"
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
@@ -81,55 +84,115 @@ def _run_question(
 
     start_time = time.time()
 
-    try:
-        # Configure agent
-        config = {"configurable": {"thread_id": session_id}}
-
-        # Run agent
-        result = graph.invoke(
-            {"messages": [HumanMessage(content=question)]},
-            config=config,
-        )
-
-        # Extract response
-        messages = result.get("messages", [])
-        response = ""
-
-        for message in reversed(messages):
-            if hasattr(message, "content") and message.content:
-                response = message.content
-                break
-
-        execution_time = time.time() - start_time
-
-        logger.info(f"\nAgent Response:\n{response}\n")
-        logger.info(f"Execution time: {execution_time:.2f}s\n")
-
-        return {
-            "question_id": question_id,
+    # Create MLflow trace context for this question
+    with create_trace_context(
+        name=f"eval_question_{question_id}",
+        span_type="AGENT",
+        inputs={"question": question},
+        attributes={
+            "question_id": str(question_id),
             "category": category,
             "difficulty": difficulty,
-            "question": question,
-            "response": response,
-            "execution_time_seconds": execution_time,
-            "success": True,
-            "error": None,
+            "evaluation_type": "synthetic"
         }
+    ):
+        try:
+            # Configure agent
+            config = {
+                "configurable": {"thread_id": session_id},
+                "tags": [
+                    f"question_id:{question_id}",
+                    f"category:{category}",
+                    f"difficulty:{difficulty}",
+                ],
+                "metadata": {
+                    "question_id": question_id,
+                    "category": category,
+                    "difficulty": difficulty,
+                    "session_id": session_id,
+                }
+            }
 
-    except Exception as e:
-        execution_time = time.time() - start_time
-        logger.error(f"Error running question {question_id}: {e}\n")
+            # Run agent - MLflow autologging will automatically trace this
+            result = graph.invoke(
+                {"messages": [HumanMessage(content=question)]},
+                config=config,
+            )
 
-        return {
-            "question_id": question_id,
-            "category": category,
-            "difficulty": difficulty,
-            "question": question,
-            "response": "",
-            "execution_time_seconds": execution_time,
-            "success": False,
-            "error": str(e),
-        }
+            # Extract response
+            messages = result.get("messages", [])
+            response = ""
+
+            for message in reversed(messages):
+                if hasattr(message, "content") and message.content:
+                    response = message.content
+                    break
+
+            execution_time = time.time() - start_time
+
+            logger.info(f"\nAgent Response:\n{response}\n")
+            logger.info(f"Execution time: {execution_time:.2f}s\n")
+
+            # Log evaluation to MLflow
+            log_question_evaluation(
+                question_id=str(question_id),
+                category=category,
+                difficulty=difficulty,
+                question=question,
+                response=response,
+                execution_time=execution_time,
+                success=True
+            )
+
+            # Annotate with additional metrics
+            annotate_span(
+                metadata={
+                    "response_length": len(response),
+                    "message_count": len(messages)
+                },
+                metrics={
+                    "execution_time": execution_time,
+                    "response_chars": float(len(response))
+                }
+            )
+
+            return {
+                "question_id": question_id,
+                "category": category,
+                "difficulty": difficulty,
+                "question": question,
+                "response": response,
+                "execution_time_seconds": execution_time,
+                "success": True,
+                "error": None,
+            }
+
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(f"Error running question {question_id}: {e}\n")
+
+            # Log error evaluation to MLflow
+            log_question_evaluation(
+                question_id=str(question_id),
+                category=category,
+                difficulty=difficulty,
+                question=question,
+                response="",
+                execution_time=execution_time,
+                success=False,
+                error=str(e)
+            )
+
+            return {
+                "question_id": question_id,
+                "category": category,
+                "difficulty": difficulty,
+                "question": question,
+                "response": "",
+                "execution_time_seconds": execution_time,
+                "success": False,
+                "error": str(e),
+            }
 
 
 def _save_results(
@@ -195,25 +258,92 @@ def _save_results(
 
 def main() -> None:
     """Main function to run all synthetic questions."""
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="Run Lambda Autotuner Agent through synthetic questions",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Example usage:
+    # Run default questions from config
+    uv run python run_synthetic_questions.py
+
+    # Run MLflow-specific questions
+    uv run python run_synthetic_questions.py --questions synthetic_questions/lambda_autotuner_questions_mlflow.json
+
+    # Run with sample size limit
+    uv run python run_synthetic_questions.py --questions synthetic_questions/lambda_autotuner_questions_mlflow.json --sample-size 5
+
+    # Enable debug logging
+    uv run python run_synthetic_questions.py --debug
+        """
+    )
+
+    parser.add_argument(
+        "--questions",
+        type=str,
+        default=None,
+        help="Path to questions JSON file (relative to script directory). Overrides config file setting."
+    )
+
+    parser.add_argument(
+        "--sample-size",
+        type=int,
+        default=None,
+        help="Number of questions to sample (0 means all). Overrides config file setting."
+    )
+
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging"
+    )
+
+    args = parser.parse_args()
+
     logger.info("Starting Lambda Autotuner Agent synthetic questions run")
+
+    # Initialize MLflow Tracing
+    print("\n" + "=" * 80)
+    print("Initializing MLflow Tracing...")
+    print("=" * 80)
+    mlflow_initialized = initialize_mlflow()
+    if mlflow_initialized:
+        print("✅ MLflow tracing enabled")
+        logger.info("MLflow tracing initialized successfully")
+    else:
+        print("⚠️  MLflow tracing not configured")
+        logger.warning("MLflow not initialized - check DATABRICKS_HOST and DATABRICKS_TOKEN")
+    print("=" * 80 + "\n")
 
     # Load configuration
     config = _load_config()
     eval_config = config.get("evaluation", {})
 
-    # Configure logging level
-    if eval_config.get("debug_logging", False):
+    # Configure logging level (CLI arg overrides config)
+    if args.debug or eval_config.get("debug_logging", False):
         logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("Debug logging enabled")
 
-    # Load questions
-    questions_file = Path(__file__).parent / eval_config.get(
-        "synthetic_questions_fpath",
-        "synthetic_questions/lambda_autotuner_questions.json",
-    )
+    # Determine questions file path (CLI arg overrides config)
+    if args.questions:
+        questions_file = Path(__file__).parent / args.questions
+        logger.info(f"Using questions file from CLI: {args.questions}")
+    else:
+        questions_file = Path(__file__).parent / eval_config.get(
+            "synthetic_questions_fpath",
+            "synthetic_questions/lambda_autotuner_questions.json",
+        )
+        logger.info(f"Using questions file from config: {questions_file}")
+
     questions = _load_questions(questions_file)
 
-    # Get sample size
-    sample_size = eval_config.get("sample_size", 0)
+    # Get sample size (CLI arg overrides config)
+    if args.sample_size is not None:
+        sample_size = args.sample_size
+        logger.info(f"Using sample size from CLI: {sample_size}")
+    else:
+        sample_size = eval_config.get("sample_size", 0)
+
     if sample_size and 0 < sample_size < len(questions):
         import random
 

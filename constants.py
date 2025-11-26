@@ -41,6 +41,11 @@ LANGFUSE_MCP_SERVER_PATH: str = "agent_tools/langfuse_mcp_server.py"
 MCP_SERVER_COMMAND: str = "uv"
 MCP_SERVER_BASE_ARGS: list[str] = ["run", "python"]
 
+# Official MLflow MCP server configuration
+# Uses the official MLflow MCP server via: uv run --with 'mlflow[mcp]>=3.5.1' mlflow mcp run
+MLFLOW_MCP_COMMAND: str = "uv"
+MLFLOW_MCP_ARGS: list[str] = ["run", "--with", "mlflow[mcp]>=3.5.1", "mlflow", "mcp", "run"]
+
 
 # =============================================================================
 # OBSERVABILITY PLATFORM CONSTANTS
@@ -49,10 +54,12 @@ MCP_SERVER_BASE_ARGS: list[str] = ["run", "python"]
 # Supported observability platforms
 PLATFORM_LANGSMITH: str = "langsmith"
 PLATFORM_LANGFUSE: str = "langfuse"
+PLATFORM_MLFLOW: str = "mlflow"
 
 SUPPORTED_PLATFORMS: tuple[str, ...] = (
     PLATFORM_LANGSMITH,
     PLATFORM_LANGFUSE,
+    PLATFORM_MLFLOW,
 )
 
 # Default platform if none specified

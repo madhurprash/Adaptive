@@ -109,6 +109,7 @@ def _get_dataset_path(
     dataset_files = {
         ObservabilityPlatform.LANGSMITH: test_data_dir / "langsmith_synthetic_questions.json",
         ObservabilityPlatform.LANGFUSE: test_data_dir / "langfuse_synthetic_questions.json",
+        ObservabilityPlatform.MLFLOW: test_data_dir / "mlflow_synthetic_questions.json",
     }
 
     dataset_path = dataset_files.get(platform)
@@ -474,6 +475,7 @@ Example usage:
     # Specify platform explicitly
     uv run python -m evaluate_adaptive.run_evaluation --platform langsmith
     uv run python -m evaluate_adaptive.run_evaluation --platform langfuse
+    uv run python -m evaluate_adaptive.run_evaluation --platform mlflow
 
     # Run evaluations for all platforms
     uv run python -m evaluate_adaptive.run_evaluation --all-platforms
@@ -487,7 +489,7 @@ Example usage:
     parser.add_argument(
         "--platform",
         type=str,
-        choices=["langsmith", "langfuse"],
+        choices=["langsmith", "langfuse", "mlflow"],
         help="Observability platform to evaluate (default: auto-detect from config/env)",
     )
 

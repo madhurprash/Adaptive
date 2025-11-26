@@ -11,6 +11,8 @@ insights_agent_model_information:
     langsmith: prompt_templates/insights_prompts/insights_prompt_langsmith.txt
     # Langfuse-specific prompt (new, tailored to Langfuse trace structure)
     langfuse: prompt_templates/insights_prompts/insights_prompt_langfuse.txt
+    # MLflow-specific prompt (tailored to Databricks MLflow trace structure)
+    mlflow: prompt_templates/insights_prompts/insights_prompt_mlflow.txt
   # Represents the model id that the agent will use within the system
   # as an deep agent model
   model_id: us.anthropic.claude-3-5-sonnet-20240620-v1:0

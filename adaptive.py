@@ -441,8 +441,9 @@ def select_platform(
     print("\n🔍 [PLATFORM SELECTION] Please select your observability platform:")
     print("   1. LangSmith")
     print("   2. Langfuse")
+    print("   3. MLflow (Databricks)")
     while True:
-        choice = input("\nEnter your choice (1 or 2): ").strip()
+        choice = input("\nEnter your choice (1, 2, or 3): ").strip()
 
         if choice == "1":
             selected_platform = "langsmith"
@@ -454,8 +455,13 @@ def select_platform(
             print("✅ Selected: Langfuse")
             logger.info("User selected Langfuse platform")
             break
+        elif choice == "3":
+            selected_platform = "mlflow"
+            print("✅ Selected: MLflow (Databricks)")
+            logger.info("User selected MLflow platform")
+            break
         else:
-            print("❌ Invalid choice. Please enter 1 or 2.")
+            print("❌ Invalid choice. Please enter 1, 2, or 3.")
 
     # Store platform in state that will be used across the agent execution process
     state["platform"] = selected_platform
@@ -644,6 +650,8 @@ async def get_insights(
             platform_enum = ObservabilityPlatform.LANGSMITH
         elif platform == PLATFORM_LANGFUSE:
             platform_enum = ObservabilityPlatform.LANGFUSE
+        elif platform == PLATFORM_MLFLOW:
+            platform_enum = ObservabilityPlatform.MLFLOW
         else:
             logger.warning(f"Unknown platform {platform}, defaulting to {DEFAULT_PLATFORM}")
             platform_enum = ObservabilityPlatform.LANGSMITH

@@ -1,0 +1,534 @@
+{
+  "run_examination_questions": [
+    {
+      "category": "recent_runs",
+      "questions": [
+        "Show me all runs in the lambda-autotuner experiment",
+        "What are the most recent runs in lambda-autotuner?",
+        "Show me runs from the past hour in lambda-autotuner",
+        "List all runs created today in lambda-autotuner",
+        "What runs are in the lambda-autotuner experiment sorted by timestamp?"
+      ]
+    },
+    {
+      "category": "run_details",
+      "questions": [
+        "Show me the details of run ID xyz in lambda-autotuner",
+        "What happened in the run at timestamp 2025-11-13 12:08:04?",
+        "Display the full run hierarchy for this lambda-autotuner run",
+        "What's the complete execution flow of run ID abc?",
+        "Show me all the metrics logged in this specific run"
+      ]
+    },
+    {
+      "category": "run_parameters_metrics",
+      "questions": [
+        "What parameters were used in this run?",
+        "Show me the metrics for run ID xyz",
+        "What configuration did the user submit in this run?",
+        "Display the parameters and metrics for the most recent run",
+        "What was the final metric value in this run?"
+      ]
+    }
+  ],
+  "error_analysis_questions": [
+    {
+      "category": "error_identification",
+      "questions": [
+        "Show me all failed runs in lambda-autotuner",
+        "What runs have errors in the lambda-autotuner experiment?",
+        "List all error messages from lambda-autotuner runs",
+        "Which runs failed in the past 24 hours?",
+        "Show me runs with status 'FAILED'"
+      ]
+    },
+    {
+      "category": "error_investigation",
+      "questions": [
+        "Why did run ID xyz fail?",
+        "What error occurred in this run?",
+        "Show me the stack trace for this failed execution",
+        "What was the error message for run abc?",
+        "Which step caused the error in this run?"
+      ]
+    },
+    {
+      "category": "error_patterns",
+      "questions": [
+        "What's the most common error in lambda-autotuner?",
+        "Are there any recurring error patterns?",
+        "Show me all runs that failed with the same error",
+        "Which error types appear most frequently?",
+        "Are errors increasing over time in lambda-autotuner?"
+      ]
+    },
+    {
+      "category": "error_context",
+      "questions": [
+        "What was the system doing before this error occurred?",
+        "Show me the parameters that caused this error",
+        "What steps succeeded before the failure?",
+        "What was different about runs that failed vs succeeded?",
+        "Show me the full context when this error happened"
+      ]
+    }
+  ],
+  "performance_debugging_questions": [
+    {
+      "category": "execution_time_issues",
+      "questions": [
+        "Show me runs with high execution time in lambda-autotuner",
+        "Which run took the longest to execute?",
+        "What's the slowest step in this run?",
+        "Why is this run so slow?",
+        "Show me runs with duration over 10 seconds"
+      ]
+    },
+    {
+      "category": "execution_time_breakdown",
+      "questions": [
+        "How long did each step take in this run?",
+        "What's the time spent in each phase?",
+        "Show me the duration breakdown for run ID xyz",
+        "Which step is the bottleneck in this run?",
+        "Display execution time for each stage in this run"
+      ]
+    },
+    {
+      "category": "performance_comparison",
+      "questions": [
+        "Compare execution time between successful and failed runs",
+        "Why is this run slower than others?",
+        "Show me the fastest vs slowest runs today",
+        "What's different about the slow runs?",
+        "Has performance degraded for similar runs?"
+      ]
+    }
+  ],
+  "metric_analysis_questions": [
+    {
+      "category": "metric_values",
+      "questions": [
+        "Show me all metrics logged in this run",
+        "What metrics were tracked in run ID abc?",
+        "Display the metric values for this run",
+        "What was the final value for accuracy in this run?",
+        "Show me the metric progression in this run"
+      ]
+    },
+    {
+      "category": "metric_comparison",
+      "questions": [
+        "Compare metrics across runs in lambda-autotuner",
+        "What's the best accuracy achieved?",
+        "Show me runs with loss below 0.1",
+        "Which run has the highest metric value?",
+        "How do metrics compare between these two runs?"
+      ]
+    },
+    {
+      "category": "metric_trends",
+      "questions": [
+        "Are metrics improving over time?",
+        "Show me the trend of accuracy across runs",
+        "What's the average metric value for this experiment?",
+        "Display metric progression over the past week",
+        "Is performance getting better or worse?"
+      ]
+    }
+  ],
+  "parameter_analysis_questions": [
+    {
+      "category": "parameter_values",
+      "questions": [
+        "What parameters were used in this run?",
+        "Show me the hyperparameters for run ID xyz",
+        "Display all parameters logged in this run",
+        "What was the learning rate for this run?",
+        "Show me the configuration settings for this run"
+      ]
+    },
+    {
+      "category": "parameter_comparison",
+      "questions": [
+        "Compare parameters across runs",
+        "What's different in the parameters of successful runs?",
+        "Show me runs with batch_size = 32",
+        "Which parameters changed between these runs?",
+        "Find runs with similar parameter settings"
+      ]
+    },
+    {
+      "category": "parameter_optimization",
+      "questions": [
+        "What parameter settings gave the best results?",
+        "Show me the optimal hyperparameters",
+        "Which learning rate performed best?",
+        "What's the relationship between this parameter and performance?",
+        "Find the best parameter combination"
+      ]
+    }
+  ],
+  "artifact_analysis_questions": [
+    {
+      "category": "artifact_listing",
+      "questions": [
+        "What artifacts were logged in this run?",
+        "Show me all artifacts for run ID xyz",
+        "List the files saved in this run",
+        "Display artifact paths for this run",
+        "What outputs were saved during this run?"
+      ]
+    },
+    {
+      "category": "artifact_retrieval",
+      "questions": [
+        "Show me the model artifact from this run",
+        "Display the contents of this artifact",
+        "What's in the model.pkl file for this run?",
+        "Retrieve the logged figure from this run",
+        "Show me the confusion matrix artifact"
+      ]
+    },
+    {
+      "category": "artifact_comparison",
+      "questions": [
+        "Compare artifacts between these two runs",
+        "What artifacts are different between successful and failed runs?",
+        "Show me how the model changed across runs",
+        "Which runs have this specific artifact?",
+        "Display differences in logged outputs"
+      ]
+    }
+  ],
+  "experiment_level_questions": [
+    {
+      "category": "experiment_overview",
+      "questions": [
+        "Show me all experiments",
+        "What experiments exist in MLflow?",
+        "Display the lambda-autotuner experiment details",
+        "How many runs are in this experiment?",
+        "What's the description of this experiment?"
+      ]
+    },
+    {
+      "category": "experiment_comparison",
+      "questions": [
+        "Compare results across experiments",
+        "Which experiment has the best results?",
+        "Show me experiments sorted by performance",
+        "What's different between these two experiments?",
+        "Display experiment-level statistics"
+      ]
+    },
+    {
+      "category": "experiment_tracking",
+      "questions": [
+        "What's the latest activity in this experiment?",
+        "Show me the most recent runs per experiment",
+        "Which experiments are active?",
+        "Display experiment creation dates",
+        "What experiments were created this month?"
+      ]
+    }
+  ],
+  "tag_and_metadata_questions": [
+    {
+      "category": "run_tags",
+      "questions": [
+        "What tags are attached to this run?",
+        "Show me runs with tag 'production'",
+        "Display all tags for run ID xyz",
+        "What runs are tagged as 'baseline'?",
+        "Show me the version tag for this run"
+      ]
+    },
+    {
+      "category": "run_metadata",
+      "questions": [
+        "What metadata is stored for this run?",
+        "Show me the run name and description",
+        "Display the user who created this run",
+        "What environment was this run in?",
+        "Show me the source of this run"
+      ]
+    },
+    {
+      "category": "run_filtering",
+      "questions": [
+        "Find runs by tag",
+        "Show me runs created by user xyz",
+        "Filter runs by metadata field",
+        "What runs match these criteria?",
+        "Display runs with specific tags"
+      ]
+    }
+  ],
+  "model_registry_questions": [
+    {
+      "category": "registered_models",
+      "questions": [
+        "What models are registered in MLflow?",
+        "Show me all versions of this model",
+        "Display the latest model version",
+        "What's the description of this registered model?",
+        "List all registered models"
+      ]
+    },
+    {
+      "category": "model_versions",
+      "questions": [
+        "Show me model version details",
+        "What run created this model version?",
+        "Display the staging version of this model",
+        "What's in production for this model?",
+        "Show me model version history"
+      ]
+    },
+    {
+      "category": "model_stages",
+      "questions": [
+        "What stage is this model version in?",
+        "Show me all production models",
+        "Which models are in staging?",
+        "Display model stage transitions",
+        "What models are archived?"
+      ]
+    }
+  ],
+  "comparison_and_debugging_questions": [
+    {
+      "category": "run_comparison",
+      "questions": [
+        "Compare this failed run to a similar successful one",
+        "What's different between run A and run B?",
+        "Show me side-by-side comparison of these two runs",
+        "Why did this run succeed while the other failed?",
+        "What changed between these executions?"
+      ]
+    },
+    {
+      "category": "root_cause_debugging",
+      "questions": [
+        "What's the root cause of this error?",
+        "Walk me through why this run failed",
+        "Show me the chain of events leading to this error",
+        "What triggered this failure?",
+        "Explain what went wrong step by step"
+      ]
+    },
+    {
+      "category": "data_flow_analysis",
+      "questions": [
+        "How did data flow through this run?",
+        "What was passed between steps?",
+        "Show me the input/output chain in this run",
+        "Where did this value come from?",
+        "How was this output generated?"
+      ]
+    }
+  ],
+  "temporal_analysis_questions": [
+    {
+      "category": "timing_analysis",
+      "questions": [
+        "When did this run start and end?",
+        "What's the timestamp of this error?",
+        "Show me runs between 12:00 PM and 1:00 PM",
+        "When was this step executed?",
+        "Display the timeline of events in this run"
+      ]
+    },
+    {
+      "category": "sequence_analysis",
+      "questions": [
+        "What happened before this step?",
+        "Show me the sequence of operations in this run",
+        "What was the execution order?",
+        "Display the chronological flow of this run",
+        "What step came after this phase?"
+      ]
+    },
+    {
+      "category": "duration_analysis",
+      "questions": [
+        "How long did this run take from start to finish?",
+        "What's the duration of each step?",
+        "Show me time gaps between steps",
+        "Where is time being spent in this run?",
+        "What's the cumulative time for all steps?"
+      ]
+    }
+  ],
+  "specific_failure_scenarios": [
+    {
+      "category": "timeout_failures",
+      "questions": [
+        "Did this run timeout?",
+        "Show me runs that exceeded time limits",
+        "Why did this run take so long?",
+        "What steps timed out?",
+        "Display timeout errors in lambda-autotuner"
+      ]
+    },
+    {
+      "category": "validation_failures",
+      "questions": [
+        "Did input validation fail in this run?",
+        "Show me validation errors",
+        "What input was rejected?",
+        "Why did schema validation fail?",
+        "Display validation error details"
+      ]
+    },
+    {
+      "category": "api_failures",
+      "questions": [
+        "Did an API call fail in this run?",
+        "Show me external API errors",
+        "What API returned an error?",
+        "Why did the external service call fail?",
+        "Display API error responses in this run"
+      ]
+    },
+    {
+      "category": "dependency_issues",
+      "questions": [
+        "Did this run fail due to missing dependencies?",
+        "Show me environment-related errors",
+        "What package or library was missing?",
+        "Why did the import fail?",
+        "Display dependency error details"
+      ]
+    }
+  ],
+  "natural_language_investigation": [
+    {
+      "category": "casual_debugging",
+      "questions": [
+        "What went wrong with this run?",
+        "Why did this fail?",
+        "Something looks broken in this run",
+        "Can you explain what happened here?",
+        "This run looks weird, what's going on?",
+        "Help me understand this error",
+        "Walk me through this failed run",
+        "What's the issue with this execution?",
+        "Why isn't this working?",
+        "What caused this to break?"
+      ]
+    },
+    {
+      "category": "detailed_investigation",
+      "questions": [
+        "Give me a detailed breakdown of what happened in this run",
+        "Analyze this run and tell me what went wrong",
+        "Help me debug run ID xyz",
+        "Investigate why this specific run failed",
+        "Explain the execution flow and where it broke",
+        "Show me everything about this error",
+        "What's the complete story of this failed run?",
+        "Break down this run step by step and find the issue",
+        "Analyze the performance problems in this run",
+        "Help me understand why this run behaved differently"
+      ]
+    }
+  ],
+  "aggregated_insights_questions": [
+    {
+      "category": "failure_patterns",
+      "questions": [
+        "What are the common failure patterns in lambda-autotuner?",
+        "Show me recurring errors across runs",
+        "Which runs fail with similar symptoms?",
+        "Are there patterns in failed vs successful runs?",
+        "What parameters consistently cause failures?"
+      ]
+    },
+    {
+      "category": "performance_patterns",
+      "questions": [
+        "Which types of runs are slowest?",
+        "Show me performance patterns across all runs",
+        "What runs consistently have high execution time?",
+        "Are certain parameters causing performance issues?",
+        "What's the typical execution time for similar runs?"
+      ]
+    },
+    {
+      "category": "metric_patterns",
+      "questions": [
+        "What parameter combinations give the best metrics?",
+        "Show me metric trends over time",
+        "Which configurations consistently perform well?",
+        "Are there metric anomalies I should investigate?",
+        "What runs have unusual metric characteristics?"
+      ]
+    }
+  ],
+  "real_world_debugging_scenarios": [
+    {
+      "category": "incident_investigation",
+      "questions": [
+        "A user reported an error at 2:30 PM - find that run",
+        "Something went wrong with run ID xyz - show me details",
+        "Users are complaining about poor results - which runs?",
+        "Find the run that processed configuration 'optimize my lambda function'",
+        "A team member got a bad result - help me find and debug it"
+      ]
+    },
+    {
+      "category": "production_issues",
+      "questions": [
+        "Show me what happened during the outage at 3 PM",
+        "Find runs affected by the deployment 10 minutes ago",
+        "Why are runs failing after the recent update?",
+        "Something broke in the last hour - show me what",
+        "Compare runs before and after the incident"
+      ]
+    },
+    {
+      "category": "specific_error_hunt",
+      "questions": [
+        "Find the run with error 'timeout waiting for response'",
+        "Show me all runs that failed with memory errors",
+        "Which runs have the error message 'invalid configuration'?",
+        "Find runs that threw a specific exception",
+        "Show me runs with exit code non-zero"
+      ]
+    }
+  ],
+  "optimization_questions": [
+    {
+      "category": "hyperparameter_tuning",
+      "questions": [
+        "What's the best learning rate for this experiment?",
+        "Show me the optimal hyperparameters",
+        "Which parameter settings gave the highest accuracy?",
+        "Compare different batch sizes and their results",
+        "What's the relationship between learning rate and loss?"
+      ]
+    },
+    {
+      "category": "model_selection",
+      "questions": [
+        "Which model architecture performed best?",
+        "Compare different model configurations",
+        "Show me the top 5 runs by accuracy",
+        "What configuration should I use for production?",
+        "Which runs meet our performance threshold?"
+      ]
+    },
+    {
+      "category": "improvement_analysis",
+      "questions": [
+        "Are results improving over time?",
+        "Show me the progression of experiments",
+        "What changes led to better performance?",
+        "Compare recent runs to baseline",
+        "What experiments should I try next?"
+      ]
+    }
+  ]
+}

@@ -1,386 +1,216 @@
 # Adaptive
 
-Adaptive - Continuous optimization for AI agents through intelligent observability and automated prompt evolution.
-
-## Features
-
-- Analyze agent execution traces from multiple observability platforms (LangSmith, Langfuse)
-- Generate insights about agent performance and behavior
-- Automatically optimize system prompts based on observed patterns
-- Interactive conversation mode with memory
-- Human-in-the-loop (HITL) approval for prompt modifications
-- Evolution engine for continuous agent improvement
-
-## Prerequisites
-
-- Python 3.12+ (recommended)
-- AWS credentials configured (for Amazon Bedrock)
-- Amazon Bedrock Guardrail with sensitive information filters
-- Access to LangSmith or Langfuse for observability traces
+Continuous optimization for AI agents through intelligent observability and automated code evolution.
 
 ## Installation
 
-There are multiple ways to install Adaptive:
-
-### One-Line Install (Recommended)
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/madhurprash/adaptive/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/madhurprash/adaptive/main/install.sh | bash
 ```
 
-## Usage
-
-After installation, you can run the agent using the `adaptive` command:
-
-### Basic Usage
-
+After installation, restart your terminal or run:
 ```bash
-# Run agent in interactive mode (auto-generates session ID)
-adaptive
-adaptive run
-
-# Run agent with a specific session ID
-adaptive run --session-id your-session-id
-
-# Run with debug logging
-adaptive run --debug
-
-# Run with session ID and debug
-adaptive run --session-id madhur2039 --debug
+source ~/.bashrc  # or ~/.zshrc
 ```
 
-### Alternative: Direct Python Execution
-
-You can also run the agent directly using Python:
+## Quick Start
 
 ```bash
-# Navigate to the installation directory
-cd ~/.adaptive
-
-# Run with Python
-python adaptive.py --session-id your-session-id
-```
-
-### Other Commands
-
-```bash
-# Show version
-adaptive version
-
-# Show current configuration
-adaptive config
-
-# Run as background daemon (checks every hour)
-adaptive daemon
-
-# Run daemon with custom interval (every 30 minutes)
-adaptive daemon --interval 1800
-```
-
-### 1. Configure Environment
-
-Create a `.env` file in the project directory:
-
-```bash
-# AWS Configuration
-AWS_REGION=us-east-1
-AWS_PROFILE=default  # Optional
-
-# LangSmith Configuration (if using LangSmith)
-LANGSMITH_API_KEY=your_api_key_here
-LANGSMITH_PROJECT=your_project_name
-
-# Langfuse Configuration (if using Langfuse)
-LANGFUSE_PUBLIC_KEY=your_public_key
-LANGFUSE_SECRET_KEY=your_secret_key
-LANGFUSE_HOST=https://cloud.langfuse.com
-
-# AgentCore Memory (optional)
-AGENTCORE_MEMORY_ROLE_ARN=arn:aws:iam::123456789:role/AgentCoreMemoryRole
-```
-
-### 2. Run the Agent
-
-**Interactive Mode (Default):**
-
-```bash
-# Run with interactive mode
-adaptive run
-
-# Or with session ID
-adaptive run --session-id "my-session-123"
-
-# Or using environment variable
-export LANGSMITH_SESSION_ID="my-session-123"
 adaptive run
 ```
 
-**With Debug Logging:**
+That's it! On first run, you'll be prompted to:
+1. Authenticate with Google (opens browser)
+2. Configure your settings
+3. Start optimizing your agents
 
-```bash
-adaptive run --debug
+## What Happens on First Run
+
 ```
-
-**Run as Background Daemon:**
-
-```bash
-# Check every hour (default)
-adaptive daemon
-
-# Custom interval (every 30 minutes)
-adaptive daemon --interval 1800
-```
-
-### 3. Example Usage Flow
-
-When you run `adaptive run`, you'll be guided through:
-
-1. **Platform Selection**: Choose between LangSmith or Langfuse
-2. **Ask Questions**: Query your agent traces
-3. **View Insights**: Get AI-generated insights about agent performance
-4. **Evolution**: Optionally trigger prompt optimization
-5. **Approve Changes**: Review and approve prompt modifications (HITL)
-
-Example session:
-
-```bash
 $ adaptive run
 
-Adaptive - Unified Multi-Agent Workflow (Interactive Mode)
-================================================================================
-Workflow: Insights Agent -> Evolution Agent
-  1. Insights Agent: Analyzes observability traces and generates insights
-  2. Evolution Agent: Optimizes system prompts based on agent performance
+╔══════════════════════════════════════════════════════════════════╗
+║                    WELCOME TO ADAPTIVE                           ║
+╚══════════════════════════════════════════════════════════════════╝
 
-=
- [PLATFORM SELECTION] Please select your observability platform:
-   1. LangSmith
-   2. Langfuse
+Adaptive helps optimize your AI agents through intelligent
+observability and automated code evolution.
 
-Enter your choice (1 or 2): 1
- Selected: LangSmith
+╔══════════════════════════════════════════════════════════════════╗
+║               AUTHENTICATION REQUIRED                            ║
+╚══════════════════════════════════════════════════════════════════╝
 
-You: What are the main errors in my agent traces?
+To get started, you need to authenticate with Google.
+This will:
+  • Create your Adaptive account (if new)
+  • Or log you into your existing account
+  • Takes less than 30 seconds
 
-[Agent analyzes traces and provides insights...]
+This is a one-time setup.
 
-You: Can you optimize the prompts based on these insights?
+Authenticate with Google now? (Y/n): y
 
-[Evolution agent suggests changes and shows patch for approval...]
-```
+🔄 Starting authentication flow...
 
-## Commands
+🔐 Opening browser for Google authentication...
 
-### Main Commands
+[Browser opens - sign in with Google or create account]
 
-```bash
-# Run agent once (interactive mode)
-adaptive run
+╔══════════════════════════════════════════════════════════════════╗
+║            ✅ AUTHENTICATION SUCCESSFUL                          ║
+╚══════════════════════════════════════════════════════════════════╝
 
-# Run as background daemon
-adaptive daemon
+Logged in as: John Doe (john@example.com)
 
-# Show version
-adaptive version
+You can now use Adaptive!
 
-# Show current configuration
-adaptive config
-```
-
-### Run Options
-
-```bash
-adaptive run [OPTIONS]
-
-Options:
-  --config PATH    Path to configuration file
-  --debug          Enable debug logging
-  --help           Show help message
-```
-
-### Daemon Options
-
-```bash
-adaptive daemon [OPTIONS]
-
-Options:
-  --config PATH       Path to configuration file
-  --debug             Enable debug logging
-  --interval SECONDS  Check interval in seconds (default: 3600)
-  --help              Show help message
+✅ You're all set! Continuing to Adaptive...
 ```
 
 ## Configuration
 
-The agent uses a YAML configuration file located at `configs/config.yaml`. You can customize:
+After authentication, configure Adaptive:
 
-- Model IDs for different agents
-- Inference parameters (temperature, max_tokens, etc.)
-- Routing logic configuration
-- Platform-specific settings
-- AgentCore Memory settings
+```bash
+# Set your model
+adaptive config set model us.anthropic.claude-sonnet-4-20250514-v1:0
 
-Example configuration structure:
+# Set observability platform  
+adaptive config set platform langsmith
 
-```yaml
-routing_configuration:
-  router_model_id: "us.anthropic.claude-3-5-haiku-20241022-v1:0"
-  inference_parameters:
-    temperature: 0.1
-    max_tokens: 500
-    top_p: 0.92
-
-agentcore_memory:
-  enabled: true
-  memory_name: "AdaptiveMemory"
-  region_name: "us-west-2"
-  context_retrieval:
-    top_k_relevant: 3
-    keep_recent_messages: 3
+# Store API keys
+adaptive config set-key langsmith
+adaptive config set-key aws
 ```
 
-## Architecture
+## Usage
 
-The system consists of multiple specialized agents:
+```bash
+# Run Adaptive
+adaptive run
 
-1. **Insights Agent**: Analyzes observability traces and generates insights
-   - Platform-specific (LangSmith/Langfuse)
-   - Uses MCP tools for data access
-   - Provides conversational analysis
+# Run with debug logging
+adaptive run --debug
 
-2. **Evolution Agent**: Optimizes system prompts
-   - Analyzes agent performance patterns
-   - Generates prompt improvements
-   - HITL approval for changes
-   - File system access for prompt updates
+# View configuration
+adaptive config show
 
-3. **Routing Agent**: Intelligent workflow routing
-   - Determines when evolution is needed
-   - User intent detection
-   - Conditional workflow execution
+# Check auth status
+adaptive auth status
+```
 
-## Advanced Features
+## Features
 
-### Conversation Memory
+- **Multi-Platform**: LangSmith, Langfuse, MLflow
+- **AI-Powered**: Identifies patterns and optimization opportunities
+- **Automated**: Evolves prompts and code based on real data
+- **Interactive**: Chat about your agent's behavior
+- **Safe**: Human-in-the-loop approval for all changes
+- **Flexible**: Use any Amazon Bedrock model
 
-The agent maintains conversation history using AgentCore Memory for:
-- Semantic search of previous interactions
-- Context-aware responses
-- Long-term learning
+## Prerequisites
 
-### Human-in-the-Loop (HITL)
+- **Python 3.12+**
+- **AWS Account** (for Bedrock models)
+- **Observability Platform** (LangSmith, Langfuse, or MLflow)
 
-Before making any prompt modifications, the agent:
-1. Shows a detailed diff/patch
-2. Displays change statistics
-3. Optionally opens in VS Code for review
-4. Waits for explicit approval
+### Environment Setup
 
-### Multi-Platform Support
+Set up AWS credentials:
+```bash
+aws configure
+```
 
-Works with multiple observability platforms:
-- **LangSmith**: Full integration with LangSmith MCP tools
-- **Langfuse**: Native Langfuse API integration
+Set up your observability platform:
+
+**LangSmith:**
+```bash
+export LANGSMITH_API_KEY=lsv2_pt_...
+export LANGSMITH_PROJECT=my-project
+```
+
+**Langfuse:**
+```bash
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+```
+
+## Commands
+
+### Authentication
+```bash
+adaptive auth login      # Log in with Google
+adaptive auth logout     # Log out
+adaptive auth status     # Show auth status
+```
+
+### Configuration
+```bash
+adaptive config show                    # View config
+adaptive config set KEY VALUE           # Set config
+adaptive config set-key PLATFORM        # Store API key
+adaptive config list-keys               # List API keys
+adaptive config delete-key PLATFORM     # Delete API key
+```
+
+### Running
+```bash
+adaptive run                 # Run agent
+adaptive run --debug         # Debug mode
+adaptive version             # Show version
+```
+
+## Google OAuth Setup
+
+To enable Google authentication, you need to set up OAuth credentials:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create a new project
+3. Enable Google+ API
+4. Create OAuth 2.0 credentials (Desktop app)
+5. Update `src/adaptive/auth.py`:
+   ```python
+   GOOGLE_CLIENT_ID = "your-client-id.apps.googleusercontent.com"
+   GOOGLE_CLIENT_SECRET = "your-client-secret"
+   ```
+
+## Configuration Files
+
+- **Auth**: `~/.adaptive/auth.json` (created on first login)
+- **Config**: `~/.adaptive/config.json` (API keys, settings)
+
+Both files are automatically secured with user-only permissions.
 
 ## Troubleshooting
 
-### Command not found
-
-If `adaptive` command is not found after installation:
-
+### Re-authenticate
 ```bash
-# Option 1: Restart your terminal
-
-# Option 2: Source your shell config
-source ~/.bashrc  # or ~/.zshrc
-
-# Option 3: Add to PATH manually
-export PATH="$HOME/.local/bin:$PATH"
+adaptive auth logout
+adaptive auth login
 ```
 
-### Python version issues
-
-Ensure Python 3.12+ is installed:
-
+### Reset configuration
 ```bash
-python3 --version
+rm ~/.adaptive/config.json
+adaptive config set model us.anthropic.claude-sonnet-4-20250514-v1:0
 ```
 
-### AWS Credentials
-
-Ensure AWS credentials are configured:
-
+### Check installation
 ```bash
-aws configure
-# or
-export AWS_PROFILE=your_profile
+which adaptive
+adaptive version
 ```
-
-### Observability Platform Issues
-
-**LangSmith:**
-- Verify `LANGSMITH_API_KEY` is set
-- Check project/session ID exists
-
-**Langfuse:**
-- Verify `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set
-- Check `LANGFUSE_HOST` is correct
-
-## Development
-
-### Running Tests
-
-```bash
-# Install development dependencies
-uv sync
-
-# Run tests (when available)
-uv run pytest
-```
-
-### Pre-commit Checks
-
-```bash
-# Format and lint
-uv run ruff check --fix . && uv run ruff format .
-
-# Security scanning
-uv run bandit -r src/
-
-# Type checking
-uv run mypy src/
-```
-
-## Documentation
-
-- [GitHub Repository](https://github.com/madhurprash/adaptive)
-- [Configuration Guide](docs/configuration.md) (coming soon)
-- [API Documentation](docs/api.md) (coming soon)
 
 ## Contributing
 
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run pre-commit checks
-5. Submit a pull request
+Contributions welcome! Please submit pull requests to:
+https://github.com/madhurprash/adaptive
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License
 
 ## Support
 
-- Issues: [GitHub Issues](https://github.com/madhurprash/adaptive/issues)
-- Discussions: [GitHub Discussions](https://github.com/madhurprash/adaptive/discussions)
-
-## Acknowledgments
-
-Built with:
-- [LangChain](https://github.com/langchain-ai/langchain)
-- [LangGraph](https://github.com/langchain-ai/langgraph)
-- [Amazon Bedrock](https://aws.amazon.com/bedrock/)
-- [LangSmith](https://www.langchain.com/langsmith)
-- [Langfuse](https://langfuse.com/)
+- Issues: https://github.com/madhurprash/adaptive/issues
+- Discussions: https://github.com/madhurprash/adaptive/discussions

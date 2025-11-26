@@ -24,11 +24,19 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 # message history size
 from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
 
-# Import Datadog LLM Observability
-from ddtrace.llmobs import LLMObs
+# Import MLflow tracing
+from mlflow_integration import (
+    initialize_mlflow,
+    track_agent_execution,
+)
+from mlflow_integration.mlflow_tracer import annotate_span
 
 # Import Langfuse for LangChain tracing
 from langfuse.langchain import CallbackHandler
+
+# Import Datadog tracing
+from ddtrace import tracer, patch_all
+from ddtrace.llmobs import LLMObs
 
 """
 This is an agent that is responsible for autotuning lambda functions
@@ -92,11 +100,39 @@ investigate and consider increasing memory.
 print(f"Loading the env vars...")
 load_dotenv()
 
-# Initialize Datadog LLM Observability
-# When using ddtrace-run, LLMObs will be automatically enabled if DD_LLMOBS_ENABLED=1
-# We just need to ensure the ML app name is set
-print("Datadog LLM Observability will be enabled via ddtrace-run...")
-logger.info("Running with Datadog automatic instrumentation")
+# Initialize MLflow Tracing
+print("Initializing MLflow Tracing...")
+mlflow_initialized = initialize_mlflow()
+if mlflow_initialized:
+    logger.info("MLflow tracing initialized successfully")
+    print("✅ MLflow tracing enabled")
+else:
+    logger.info("Running without MLflow tracing")
+    print("⚠️  MLflow tracing not configured (check DATABRICKS_HOST and DATABRICKS_TOKEN)")
+
+# Initialize Datadog APM Tracing
+print("Initializing Datadog APM...")
+datadog_enabled = os.getenv("DD_TRACE_ENABLED", "false").lower() == "true"
+if datadog_enabled:
+    # Patch all supported libraries for automatic tracing
+    patch_all()
+
+    # Enable LLM Observability if configured
+    llmobs_enabled = os.getenv("DD_LLMOBS_ENABLED", "false").lower() == "true"
+    if llmobs_enabled:
+        LLMObs.enable(
+            ml_app=os.getenv("DD_SERVICE", "lambda-autotuner-agent"),
+            integrations_enabled=True,
+            agentless_enabled=True
+        )
+        logger.info("Datadog LLM Observability enabled")
+        print("✅ Datadog APM with LLM Observability enabled")
+    else:
+        logger.info("Datadog APM enabled (standard tracing only)")
+        print("✅ Datadog APM enabled")
+else:
+    logger.info("Running without Datadog APM")
+    print("⚠️  Datadog APM not configured (set DD_TRACE_ENABLED=true to enable)")
 
 # Initialize the langfuse client
 langfuse = get_client()
@@ -239,6 +275,14 @@ def _invoke_agent(state: AgentState) -> AgentState:
         messages = state.get("messages", [])
         print(f"In AGENT INVOCATION NODE: Going to invoke the lambda agent with the context: {messages}")
 
+        # Log invocation metadata to MLflow
+        annotate_span(
+            metadata={
+                "input_message_count": len(messages),
+                "graph_node": "agent_invocation"
+            }
+        )
+
         # Invoke the agent with the current messages
         # LangChain will be auto-traced by Datadog's ddtrace-run and Langfuse
         response = agent.invoke(
@@ -247,10 +291,36 @@ def _invoke_agent(state: AgentState) -> AgentState:
         )
         print(f"RESPONSE: {response['messages']}")
 
+        # Log response details to MLflow
+        response_messages = response.get("messages", [])
+        tool_calls_count = sum(
+            1 for msg in response_messages
+            if hasattr(msg, "tool_calls") and msg.tool_calls
+        )
+
+        annotate_span(
+            metadata={
+                "output_message_count": len(response_messages),
+                "tool_calls_made": tool_calls_count
+            },
+            metrics={
+                "agent_turns": 1.0,
+                "tools_invoked": float(tool_calls_count)
+            }
+        )
+
         # Return updated state with agent response
         return {"messages": response["messages"]}
     except Exception as e:
         logger.error(f"Error invoking agent: {e}")
+
+        # Log error to MLflow
+        annotate_span(
+            metadata={
+                "agent_error": str(e),
+                "error_type": type(e).__name__
+            }
+        )
 
         error_message = AIMessage(
             content=f"I encountered an error: {str(e)}. Please try again."
@@ -279,6 +349,11 @@ graph = graph_builder.compile(checkpointer=checkpointer)
 logger.info("Compiled LangGraph with checkpointer")
 
 
+@track_agent_execution(
+    name="lambda_autotuner_agent",
+    model_name="claude-sonnet-4",
+    model_provider="bedrock"
+)
 def run_agent_with_session(
     user_message: str,
     session_id: str,
@@ -307,6 +382,19 @@ def run_agent_with_session(
     user_msg = HumanMessage(content=user_message)
 
     try:
+        # Add session metadata to MLflow trace
+        annotate_span(
+            metadata={
+                "session_id": session_id,
+                "user_message": user_message,
+                "message_length": len(user_message)
+            },
+            tags={
+                "agent_type": "lambda_autotuner",
+                "environment": "production"
+            }
+        )
+
         # Invoke the graph with the user message
         # Datadog will automatically trace this via ddtrace-run
         # Langfuse will trace via callback handler
@@ -324,6 +412,19 @@ def run_agent_with_session(
         last_message = result["messages"][-1] if result["messages"] else None
         response_content = last_message.content if last_message else ""
 
+        # Log response metadata to MLflow
+        annotate_span(
+            metadata={
+                "response_length": len(response_content),
+                "message_count": len(result["messages"]),
+                "success": True
+            },
+            metrics={
+                "response_characters": float(len(response_content)),
+                "total_messages": float(len(result["messages"]))
+            }
+        )
+
         return {
             "response": response_content,
             "all_messages": result["messages"],
@@ -331,6 +432,15 @@ def run_agent_with_session(
         }
     except Exception as e:
         logger.error(f"Error in session {session_id}: {e}", exc_info=True)
+
+        # Log error to MLflow trace
+        annotate_span(
+            metadata={
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+        )
         raise
 
 
