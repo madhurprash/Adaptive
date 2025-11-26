@@ -1,4 +1,4 @@
-s#!/bin/bash
+#!/bin/bash
 # Adaptive Installation Script
 # Inspired by Claude Code's installation approach
 
@@ -185,7 +185,7 @@ main() {
     echo -e "     ${BLUE}adaptive config set-key langsmith${NC}"
     echo ""
     echo -e "  3. ${YELLOW}Run Adaptive:${NC}"
-    echo -e "     ${BLUE}adaptive run${NC}"
+    echo -e "     ${BLUE}adaptive${NC}"
     echo ""
     echo -e "For help: ${BLUE}adaptive --help${NC}"
     echo -e "Documentation: ${BLUE}https://github.com/madhurprash/adaptive${NC}"

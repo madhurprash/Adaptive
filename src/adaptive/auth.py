@@ -5,6 +5,7 @@ Supports Google OAuth for account creation and login.
 
 import json
 import logging
+import os
 import webbrowser
 from pathlib import Path
 from typing import Optional
@@ -21,9 +22,15 @@ logger = logging.getLogger(__name__)
 AUTH_DIR = Path.home() / ".adaptive"
 AUTH_FILE = AUTH_DIR / "auth.json"
 
-# Google OAuth configuration
-GOOGLE_CLIENT_ID = "your-client-id.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET = "your-client-secret"
+# Google OAuth configuration - read from environment variables
+GOOGLE_CLIENT_ID = os.getenv(
+    "ADAPTIVE_GOOGLE_CLIENT_ID",
+    "your-client-id.apps.googleusercontent.com",
+)
+GOOGLE_CLIENT_SECRET = os.getenv(
+    "ADAPTIVE_GOOGLE_CLIENT_SECRET",
+    "your-client-secret",
+)
 OAUTH_SCOPES = ["openid", "email", "profile"]
 
 
@@ -123,6 +130,7 @@ class AuthManager:
 
             # Run local server for OAuth callback
             credentials = oauth_flow.run_local_server(
+                host="localhost",
                 port=8080,
                 prompt="consent",
                 success_message="✅ Authentication successful! You can close this window and return to the terminal.",

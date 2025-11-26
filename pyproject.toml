@@ -27,8 +27,6 @@ dependencies = [
     "boto3>=1.40.67",
     "ddtrace>=2.0.0",
     "deepagents>=0.2.5",
-    "google-auth>=2.29.0",
-    "google-auth-oauthlib>=1.2.0",
     "httpx>=0.28.1",
     "langchain",
     "langchain-aws>=1.0.0",
@@ -41,6 +39,7 @@ dependencies = [
     "requests>=2.32.0",
     "tavily>=1.1.0",
     "transformers>=4.30.0",
+    "warrant-lite>=1.0.1",
     "zmq>=0.0.0",
 ]
 

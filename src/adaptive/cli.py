@@ -11,8 +11,9 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from .auth import AuthManager
+from .cognito_auth import CognitoAuthManager
 from .config_manager import ConfigManager
+from .onboarding import needs_onboarding, run_onboarding
 
 
 # Configure logging
@@ -39,12 +40,26 @@ def _get_project_root() -> Path:
 def _run_agent(
     debug: bool = False,
     session_id: Optional[str] = None,
+    skip_onboarding: bool = False,
 ) -> int:
     """Run the Adaptive agent."""
     try:
-        # Ensure user is authenticated
-        auth = AuthManager()
-        auth.ensure_authenticated()
+        # Check if onboarding is needed (unless explicitly skipped)
+        if not skip_onboarding and needs_onboarding():
+            print("\n🚀 First time setup detected\n")
+            if not run_onboarding():
+                print("\n❌ Setup incomplete. Please try again.\n")
+                return 1
+        else:
+            # Just ensure authentication for returning users
+            auth = CognitoAuthManager()
+            if not auth.is_authenticated():
+                print("\n❌ Not authenticated. Run 'adaptive auth login'\n")
+                return 1
+
+            # Show quick welcome
+            user_name = auth.get_user_name() or auth.get_user_email()
+            print(f"\n✓ Authenticated as: {user_name}")
 
         # Set logging level
         if debug:
@@ -171,17 +186,90 @@ def _cmd_config_delete_key(args) -> int:
     return 0
 
 
-def _cmd_auth_login() -> int:
+def _cmd_auth_signup(args) -> int:
+    """Create new account with email."""
+    auth = CognitoAuthManager()
+
+    email = args.email or input("Email: ").strip()
+    if not email:
+        print("❌ Email is required")
+        return 1
+
+    name = args.name or input("Name (optional): ").strip()
+
+    if not args.password:
+        print("\nPassword requirements:")
+        print("  • At least 8 characters")
+        print("  • One uppercase letter")
+        print("  • One lowercase letter")
+        print("  • One number")
+        print("  • One special character\n")
+
+    password = args.password or getpass.getpass("Password: ")
+    if not password:
+        print("❌ Password is required")
+        return 1
+
+    if not args.password:
+        confirm_password = getpass.getpass("Confirm password: ")
+        if password != confirm_password:
+            print("❌ Passwords do not match")
+            return 1
+
+    if auth.signup_with_email(email, password, name or None):
+        return 0
+    return 1
+
+
+def _cmd_auth_login(args) -> int:
+    """Log in with email/password."""
+    auth = CognitoAuthManager()
+
+    email = args.email or input("Email: ").strip()
+    if not email:
+        print("❌ Email is required")
+        return 1
+
+    password = args.password or getpass.getpass("Password: ")
+    if not password:
+        print("❌ Password is required")
+        return 1
+
+    if auth.login_with_email(email, password):
+        return 0
+    return 1
+
+
+def _cmd_auth_google() -> int:
     """Log in with Google OAuth."""
-    auth = AuthManager()
+    auth = CognitoAuthManager()
     if auth.login_with_google():
+        return 0
+    return 1
+
+
+def _cmd_auth_verify(args) -> int:
+    """Verify email with confirmation code."""
+    auth = CognitoAuthManager()
+
+    email = args.email or input("Email: ").strip()
+    if not email:
+        print("❌ Email is required")
+        return 1
+
+    code = args.code or input("Verification code: ").strip()
+    if not code:
+        print("❌ Verification code is required")
+        return 1
+
+    if auth.verify_email_standalone(email, code):
         return 0
     return 1
 
 
 def _cmd_auth_logout() -> int:
     """Log out."""
-    auth = AuthManager()
+    auth = CognitoAuthManager()
     if auth.logout():
         return 0
     return 1
@@ -189,7 +277,7 @@ def _cmd_auth_logout() -> int:
 
 def _cmd_auth_status() -> int:
     """Show authentication status."""
-    auth = AuthManager()
+    auth = CognitoAuthManager()
     auth.show_status()
     return 0
 
@@ -205,26 +293,30 @@ def _show_version() -> None:
 
 def main() -> int:
     """Main CLI entry point."""
+    # If no arguments provided, run the agent (with onboarding if needed)
+    if len(sys.argv) == 1:
+        return _run_agent()
+
     parser = argparse.ArgumentParser(
         prog="adaptive",
         description="Adaptive - Continuous optimization for AI agents",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # First time - Authenticate with Google
-    adaptive auth login
+    # First time - Just run adaptive (will guide you through setup)
+    adaptive
 
-    # Initial setup
-    adaptive config set model us.anthropic.claude-sonnet-4-20250514-v1:0
-    adaptive config set platform langsmith
-    adaptive config set-key langsmith
-
-    # Run agent (will prompt for auth if not logged in)
+    # Run agent explicitly
     adaptive run
 
     # View configuration and auth status
     adaptive config show
     adaptive auth status
+
+    # Manual configuration (optional)
+    adaptive config set model us.anthropic.claude-sonnet-4-20250514-v1:0
+    adaptive config set platform langsmith
+    adaptive config set-key langsmith
 
     # Manage API keys
     adaptive config set-key langfuse
@@ -242,8 +334,24 @@ For more information, visit: https://github.com/madhurprash/adaptive
     auth_parser = subparsers.add_parser("auth", help="Manage authentication")
     auth_subparsers = auth_parser.add_subparsers(dest="auth_command", required=True)
 
+    # auth signup
+    signup_parser = auth_subparsers.add_parser("signup", help="Create new account with email")
+    signup_parser.add_argument("--email", type=str, help="Email address")
+    signup_parser.add_argument("--password", type=str, help="Password (will prompt if not provided)")
+    signup_parser.add_argument("--name", type=str, help="Your name (optional)")
+
     # auth login
-    auth_subparsers.add_parser("login", help="Log in with Google")
+    login_parser = auth_subparsers.add_parser("login", help="Log in with email/password")
+    login_parser.add_argument("--email", type=str, help="Email address")
+    login_parser.add_argument("--password", type=str, help="Password (will prompt if not provided)")
+
+    # auth google
+    auth_subparsers.add_parser("google", help="Log in with Google OAuth")
+
+    # auth verify
+    verify_parser = auth_subparsers.add_parser("verify", help="Verify email with confirmation code")
+    verify_parser.add_argument("--email", type=str, help="Email address")
+    verify_parser.add_argument("--code", type=str, help="Verification code")
 
     # auth logout
     auth_subparsers.add_parser("logout", help="Log out")
@@ -283,6 +391,7 @@ For more information, visit: https://github.com/madhurprash/adaptive
     run_parser = subparsers.add_parser("run", help="Run the agent")
     run_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     run_parser.add_argument("--session-id", type=str, help="Session ID (auto-generated if not provided)")
+    run_parser.add_argument("--skip-onboarding", action="store_true", help="Skip onboarding checks")
 
     # ========================================================================
     # VERSION COMMAND
@@ -298,8 +407,14 @@ For more information, visit: https://github.com/madhurprash/adaptive
         return 0
 
     if args.command == "auth":
-        if args.auth_command == "login":
-            return _cmd_auth_login()
+        if args.auth_command == "signup":
+            return _cmd_auth_signup(args)
+        elif args.auth_command == "login":
+            return _cmd_auth_login(args)
+        elif args.auth_command == "google":
+            return _cmd_auth_google()
+        elif args.auth_command == "verify":
+            return _cmd_auth_verify(args)
         elif args.auth_command == "logout":
             return _cmd_auth_logout()
         elif args.auth_command == "status":
@@ -318,7 +433,11 @@ For more information, visit: https://github.com/madhurprash/adaptive
             return _cmd_config_delete_key(args)
 
     elif args.command == "run":
-        return _run_agent(debug=args.debug, session_id=args.session_id)
+        return _run_agent(
+            debug=args.debug,
+            session_id=args.session_id,
+            skip_onboarding=args.skip_onboarding,
+        )
 
     elif args.command == "version":
         _show_version()
