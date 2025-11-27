@@ -104,13 +104,13 @@ class SyntheticTask(BaseModel):
         description="Unique task identifier (UUID)"
     )
     # this is the description of the task
-    task_description = Field(
-        description="Human-readable task description per agent", 
+    task_description: str = Field(
+        description="Human-readable task description per agent",
         min_length=10
     )
     # this is the type of the task
-    task_type = Field(
-        description="Task category", 
+    task_type: str = Field(
+        description="Task category",
         pattern="^(exploration|edge_case|optimization|regression)$",
     )
     # this is the difficulty level of the synthetic task
@@ -190,7 +190,7 @@ class SelfQuestioningModule:
         llm: ChatBedrockConverse,
         embedding_model: Any,
         agentcore_memory: Any,
-        config_path: str = "evolution/self_questioning/configs/self_questioning_config.yaml",
+        config_dict: Dict[str, Any],
     ):
         """
         Initialize the Self-Questioning Module.
@@ -199,44 +199,50 @@ class SelfQuestioningModule:
             llm: Language model for task generation
             embedding_model: Model for computing task embeddings
             agentcore_memory: AgentCore memory interface for storing/retrieving tasks
-            config_path: Path to configuration file
+            config_dict: Configuration dictionary from main config.yaml
         """
-        # Load configuration
-        logger.info(f"Loading configuration from: {config_path}")
-        self.config = load_config(config_path)
+        # Use provided configuration dictionary
+        logger.info("Initializing SelfQuestioningModule with provided configuration")
+        self.config = config_dict
 
         if not self.config:
-            raise ValueError(f"Failed to load configuration from {config_path}")
+            raise ValueError("Configuration dictionary is empty")
 
-        task_gen_config = self.config['task_generation_agent']
+        # Get sub-configurations
+        task_gen_config = self.config.get('task_generator', {})
+        diversity_config = self.config.get('diversity_enforcer', {})
+        gap_config = self.config.get('capability_gap_analyzer', {})
 
         # Set LLM and other services
         self.llm = llm
         self.embedding_model = embedding_model
         self.agentcore_memory = agentcore_memory
 
-        # Load prompt templates
+        # Load prompt templates from the self_questioning module directory
         logger.info("Loading prompt templates...")
+        prompt_base_path = "evolution/self_questioning/prompt_templates"
         self.gap_analysis_prompt_template = load_system_prompt(
-            task_gen_config['prompts']['capability_gap_analysis']
+            f"{prompt_base_path}/capability_gap_analysis_prompt.txt"
         )
         self.task_generation_prompt_template = load_system_prompt(
-            task_gen_config['prompts']['task_generation']
+            f"{prompt_base_path}/task_generation_prompt.txt"
         )
         self.exploration_prompt_template = load_system_prompt(
-            task_gen_config['prompts']['exploration']
+            f"{prompt_base_path}/exploration_prompt.txt"
         )
 
-        # Set parameters from config
-        self.diversity_threshold = task_gen_config['diversity_threshold']
-        self.min_difficulty = task_gen_config['min_difficulty']
-        self.max_difficulty = task_gen_config['max_difficulty']
-        self.tasks_per_gap = task_gen_config['tasks_per_gap']
+        # Set parameters from main config
+        self.diversity_threshold = diversity_config.get('min_similarity_threshold', 0.85)
+        # Use task difficulty distribution from config
+        difficulty_dist = task_gen_config.get('difficulty_distribution', {})
+        self.min_difficulty = min(difficulty_dist.get('easy', 0.3), difficulty_dist.get('medium', 0.5))
+        self.max_difficulty = max(difficulty_dist.get('hard', 0.2), difficulty_dist.get('medium', 0.5))
+        self.tasks_per_gap = task_gen_config.get('max_tasks_per_session', 5)
 
-        # Exploration configuration
-        self.exploration_enabled = task_gen_config['exploration']['enabled']
-        self.num_exploration_tasks = task_gen_config['exploration']['num_exploration_tasks']
-        self.default_agent_codebase_path = task_gen_config['exploration']['default_agent_codebase_path']
+        # Exploration configuration (enable by default if not specified)
+        self.exploration_enabled = True
+        self.num_exploration_tasks = 3
+        self.default_agent_codebase_path = "agents_tested/"
 
         # Initialize file system tools for exploration agent
         self.file_tools = self._create_file_tools()
@@ -298,7 +304,7 @@ class SelfQuestioningModule:
         logger.info("✅ Exploration agent created successfully")
         return agent
 
-    def generate_tasks(
+    async def generate_tasks(
         self,
         environment_context: Dict[str, Any],
         agent_execution_history: List[Dict],
