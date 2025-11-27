@@ -42,11 +42,16 @@ def _run_agent(
     debug: bool = False,
     session_id: Optional[str] = None,
     skip_onboarding: bool = False,
+    dev_mode: bool = False,
 ) -> int:
     """Run the Adaptive agent."""
     try:
-        # Check if onboarding is needed (unless explicitly skipped)
-        if not skip_onboarding and needs_onboarding():
+        # Dev mode bypasses authentication
+        if dev_mode:
+            print("\n⚠️  DEV MODE ENABLED - Authentication bypassed")
+            print("⚠️  This should ONLY be used for local development\n")
+        # Check if onboarding is needed (unless explicitly skipped or in dev mode)
+        elif not skip_onboarding and needs_onboarding():
             print("\n🚀 First time setup detected\n")
             if not run_onboarding():
                 print("\n❌ Setup incomplete. Please try again.\n")

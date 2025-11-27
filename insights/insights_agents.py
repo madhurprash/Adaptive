@@ -32,7 +32,15 @@ from langchain.agents.middleware import (
     SummarizationMiddleware,
     TodoListMiddleware,
 )
-from constants import *
+from constants import (
+    CONFIG_FILE_FPATH,
+    MCP_SERVER_COMMAND,
+    MCP_SERVER_BASE_ARGS,
+    LANGSMITH_MCP_SERVER_PATH,
+    LANGFUSE_MCP_SERVER_PATH,
+    MLFLOW_MCP_SERVER_PATH,
+    CLAUDE_4_5_SONNET_HINT,
+)
 from utils import load_system_prompt, load_config
 
 # Configure logging
@@ -233,14 +241,14 @@ class InsightsAgentFactory:
                 server_name = "langfuse"
                 logger.info(f"Connecting to custom Langfuse MCP server: {LANGFUSE_MCP_SERVER_PATH}")
             elif platform == ObservabilityPlatform.MLFLOW:
-                # Use official MLflow MCP server
+                # Use local custom MLflow MCP server
                 server_config = {
                     "transport": "stdio",
-                    "command": MLFLOW_MCP_COMMAND,
-                    "args": MLFLOW_MCP_ARGS,
+                    "command": MCP_SERVER_COMMAND,
+                    "args": MCP_SERVER_BASE_ARGS + [MLFLOW_MCP_SERVER_PATH],
                 }
                 server_name = "mlflow"
-                logger.info(f"Connecting to official MLflow MCP server via: {MLFLOW_MCP_COMMAND} {' '.join(MLFLOW_MCP_ARGS)}")
+                logger.info(f"Connecting to custom MLflow MCP server: {MLFLOW_MCP_SERVER_PATH}")
             else:
                 raise ValueError(f"Unsupported platform: {platform}")
 

@@ -10,12 +10,11 @@ import logging
 import time
 from pathlib import Path
 
+import mlflow
 import yaml
 from langchain_core.messages import HumanMessage
 
 from agent import graph
-from mlflow_integration import initialize_mlflow
-from mlflow_integration.mlflow_tracer import create_trace_context, log_question_evaluation, annotate_span
 
 
 # Configure logging
@@ -84,19 +83,16 @@ def _run_question(
 
     start_time = time.time()
 
-    # Create MLflow trace context for this question
-    with create_trace_context(
-        name=f"eval_question_{question_id}",
-        span_type="AGENT",
-        inputs={"question": question},
-        attributes={
-            "question_id": str(question_id),
-            "category": category,
-            "difficulty": difficulty,
-            "evaluation_type": "synthetic"
-        }
-    ):
+    # Start a new MLflow run for each question
+    with mlflow.start_run(run_name=f"question_{question_id}"):
         try:
+            # Log question metadata to MLflow
+            mlflow.log_param("question_id", question_id)
+            mlflow.log_param("category", category)
+            mlflow.log_param("difficulty", difficulty)
+            mlflow.log_param("question", question[:500])  # Truncate long questions
+            mlflow.set_tag("session_id", session_id)
+
             # Configure agent
             config = {
                 "configurable": {"thread_id": session_id},
@@ -113,7 +109,7 @@ def _run_question(
                 }
             }
 
-            # Run agent - MLflow autologging will automatically trace this
+            # Run agent
             result = graph.invoke(
                 {"messages": [HumanMessage(content=question)]},
                 config=config,
@@ -130,31 +126,13 @@ def _run_question(
 
             execution_time = time.time() - start_time
 
+            # Log success metrics to MLflow
+            mlflow.log_param("success", True)
+            mlflow.log_param("response_length", len(response))
+            mlflow.log_metric("execution_time_seconds", execution_time)
+
             logger.info(f"\nAgent Response:\n{response}\n")
             logger.info(f"Execution time: {execution_time:.2f}s\n")
-
-            # Log evaluation to MLflow
-            log_question_evaluation(
-                question_id=str(question_id),
-                category=category,
-                difficulty=difficulty,
-                question=question,
-                response=response,
-                execution_time=execution_time,
-                success=True
-            )
-
-            # Annotate with additional metrics
-            annotate_span(
-                metadata={
-                    "response_length": len(response),
-                    "message_count": len(messages)
-                },
-                metrics={
-                    "execution_time": execution_time,
-                    "response_chars": float(len(response))
-                }
-            )
 
             return {
                 "question_id": question_id,
@@ -171,17 +149,11 @@ def _run_question(
             execution_time = time.time() - start_time
             logger.error(f"Error running question {question_id}: {e}\n")
 
-            # Log error evaluation to MLflow
-            log_question_evaluation(
-                question_id=str(question_id),
-                category=category,
-                difficulty=difficulty,
-                question=question,
-                response="",
-                execution_time=execution_time,
-                success=False,
-                error=str(e)
-            )
+            # Log error to MLflow
+            mlflow.log_param("success", False)
+            mlflow.log_param("error", str(e)[:500])  # Truncate long errors
+            mlflow.log_param("error_type", type(e).__name__)
+            mlflow.log_metric("execution_time_seconds", execution_time)
 
             return {
                 "question_id": question_id,
@@ -267,11 +239,11 @@ Example usage:
     # Run default questions from config
     uv run python run_synthetic_questions.py
 
-    # Run MLflow-specific questions
-    uv run python run_synthetic_questions.py --questions synthetic_questions/lambda_autotuner_questions_mlflow.json
+    # Run specific questions file
+    uv run python run_synthetic_questions.py --questions synthetic_questions/lambda_autotuner_questions.json
 
     # Run with sample size limit
-    uv run python run_synthetic_questions.py --questions synthetic_questions/lambda_autotuner_questions_mlflow.json --sample-size 5
+    uv run python run_synthetic_questions.py --questions synthetic_questions/lambda_autotuner_questions.json --sample-size 5
 
     # Enable debug logging
     uv run python run_synthetic_questions.py --debug
@@ -301,19 +273,6 @@ Example usage:
     args = parser.parse_args()
 
     logger.info("Starting Lambda Autotuner Agent synthetic questions run")
-
-    # Initialize MLflow Tracing
-    print("\n" + "=" * 80)
-    print("Initializing MLflow Tracing...")
-    print("=" * 80)
-    mlflow_initialized = initialize_mlflow()
-    if mlflow_initialized:
-        print("✅ MLflow tracing enabled")
-        logger.info("MLflow tracing initialized successfully")
-    else:
-        print("⚠️  MLflow tracing not configured")
-        logger.warning("MLflow not initialized - check DATABRICKS_HOST and DATABRICKS_TOKEN")
-    print("=" * 80 + "\n")
 
     # Load configuration
     config = _load_config()

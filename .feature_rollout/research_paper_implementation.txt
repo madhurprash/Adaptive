@@ -1,0 +1,24 @@
+Human: You are a senior research engineer and principal software architect. 
+Your task is to read and interpret the research paper below and generate a complete design document for integrating
+it within the adaptive agent construct so that the agent optimization is taken care of.
+
+Follow this structure EXACTLY:
+
+1. Overview  
+2. Paper Breakdown → Engineering Interpretation  
+3. System Architecture Overview  
+4. Detailed Component Specifications  
+5. Infrastructure & Deployment Plan  
+6. Risks, Limitations, Mitigations  
+7. Evaluation & Benchmarking  
+8. Implementation Roadmap  
+9. Appendices
+
+Be explicit about assumptions when the paper is vague. Infer realistic engineering details. Produce an actionable, unambiguous design doc with module definitions, APIs, data flows, and system diagrams.
+
+Here is the research paper: https://arxiv.org/pdf/2511.10395v1
+
+Provide the details of the implementation and how this would work for the adaptive product in this folder
+in a design doc folder and name it design_doc_{version_number} and name the version number
+based on other design documents please. Also have next steps as well based on heavy research in the 
+online community.

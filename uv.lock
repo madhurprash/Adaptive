@@ -16,6 +16,7 @@ dependencies = [
     { name = "boto3" },
     { name = "ddtrace" },
     { name = "deepagents" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "langchain" },
     { name = "langchain-aws" },
@@ -28,6 +29,7 @@ dependencies = [
     { name = "requests" },
     { name = "tavily" },
     { name = "transformers" },
+    { name = "uvicorn" },
     { name = "warrant-lite" },
     { name = "zmq" },
 ]
@@ -38,6 +40,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.40.67" },
     { name = "ddtrace", specifier = ">=2.0.0" },
     { name = "deepagents", specifier = ">=0.2.5" },
+    { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain" },
     { name = "langchain-aws", specifier = ">=1.0.0" },
@@ -50,6 +53,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.0" },
     { name = "tavily", specifier = ">=1.1.0" },
     { name = "transformers", specifier = ">=4.30.0" },
+    { name = "uvicorn", specifier = ">=0.32.0" },
     { name = "warrant-lite", specifier = ">=1.0.1" },
     { name = "zmq", specifier = ">=0.0.0" },
 ]

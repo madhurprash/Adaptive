@@ -3,19 +3,19 @@
     {
       "category": "recent_runs",
       "questions": [
-        "Show me all runs in the lambda-autotuner experiment",
-        "What are the most recent runs in lambda-autotuner?",
-        "Show me runs from the past hour in lambda-autotuner",
-        "List all runs created today in lambda-autotuner",
-        "What runs are in the lambda-autotuner experiment sorted by timestamp?"
+        "Show me all runs in the /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent experiment",
+        "What are the most recent runs in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent?",
+        "Show me runs from the past hour in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent",
+        "List all runs created today in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent",
+        "What runs are in the /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent experiment sorted by timestamp?"
       ]
     },
     {
       "category": "run_details",
       "questions": [
-        "Show me the details of run ID xyz in lambda-autotuner",
+        "Show me the details of run ID xyz in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent",
         "What happened in the run at timestamp 2025-11-13 12:08:04?",
-        "Display the full run hierarchy for this lambda-autotuner run",
+        "Display the full run hierarchy for this /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent run",
         "What's the complete execution flow of run ID abc?",
         "Show me all the metrics logged in this specific run"
       ]
@@ -35,9 +35,9 @@
     {
       "category": "error_identification",
       "questions": [
-        "Show me all failed runs in lambda-autotuner",
-        "What runs have errors in the lambda-autotuner experiment?",
-        "List all error messages from lambda-autotuner runs",
+        "Show me all failed runs in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent",
+        "What runs have errors in the /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent experiment?",
+        "List all error messages from /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent runs",
         "Which runs failed in the past 24 hours?",
         "Show me runs with status 'FAILED'"
       ]
@@ -55,11 +55,11 @@
     {
       "category": "error_patterns",
       "questions": [
-        "What's the most common error in lambda-autotuner?",
+        "What's the most common error in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent?",
         "Are there any recurring error patterns?",
         "Show me all runs that failed with the same error",
         "Which error types appear most frequently?",
-        "Are errors increasing over time in lambda-autotuner?"
+        "Are errors increasing over time in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent?"
       ]
     },
     {
@@ -77,7 +77,7 @@
     {
       "category": "execution_time_issues",
       "questions": [
-        "Show me runs with high execution time in lambda-autotuner",
+        "Show me runs with high execution time in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent",
         "Which run took the longest to execute?",
         "What's the slowest step in this run?",
         "Why is this run so slow?",
@@ -119,7 +119,7 @@
     {
       "category": "metric_comparison",
       "questions": [
-        "Compare metrics across runs in lambda-autotuner",
+        "Compare metrics across runs in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent",
         "What's the best accuracy achieved?",
         "Show me runs with loss below 0.1",
         "Which run has the highest metric value?",
@@ -207,7 +207,7 @@
       "questions": [
         "Show me all experiments",
         "What experiments exist in MLflow?",
-        "Display the lambda-autotuner experiment details",
+        "Display the /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent experiment details",
         "How many runs are in this experiment?",
         "What's the description of this experiment?"
       ]
@@ -369,7 +369,7 @@
         "Show me runs that exceeded time limits",
         "Why did this run take so long?",
         "What steps timed out?",
-        "Display timeout errors in lambda-autotuner"
+        "Display timeout errors in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent"
       ]
     },
     {
@@ -439,7 +439,7 @@
     {
       "category": "failure_patterns",
       "questions": [
-        "What are the common failure patterns in lambda-autotuner?",
+        "What are the common failure patterns in /Users/madhur.prashant7@gmail.com/lambda-autotuner-agent?",
         "Show me recurring errors across runs",
         "Which runs fail with similar symptoms?",
         "Are there patterns in failed vs successful runs?",

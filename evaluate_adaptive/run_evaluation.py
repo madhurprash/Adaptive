@@ -2,6 +2,8 @@
 
 This script loads synthetic questions and runs the agent on each one,
 logging results locally for analysis.
+
+ uv run python -m evaluate_adaptive.run_evaluation --platform mlflow for example
 """
 
 import sys

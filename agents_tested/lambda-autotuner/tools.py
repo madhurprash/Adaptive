@@ -19,9 +19,6 @@ from typing import (
 )
 from langchain_core.tools import tool
 
-# Import MLflow tracing utilities
-from mlflow_integration.mlflow_tracer import create_trace_context, annotate_span
-
 from constants import (
     DEFAULT_DURATION_BUDGET_PERCENT,
     DEFAULT_MEMORY_STEP_MB,

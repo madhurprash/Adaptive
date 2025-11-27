@@ -41,10 +41,9 @@ LANGFUSE_MCP_SERVER_PATH: str = "agent_tools/langfuse_mcp_server.py"
 MCP_SERVER_COMMAND: str = "uv"
 MCP_SERVER_BASE_ARGS: list[str] = ["run", "python"]
 
-# Official MLflow MCP server configuration
-# Uses the official MLflow MCP server via: uv run --with 'mlflow[mcp]>=3.5.1' mlflow mcp run
-MLFLOW_MCP_COMMAND: str = "uv"
-MLFLOW_MCP_ARGS: list[str] = ["run", "--with", "mlflow[mcp]>=3.5.1", "mlflow", "mcp", "run"]
+# Local MLflow MCP server configuration
+# Uses the local custom MLflow MCP server at agent_tools/mlflow_mcp_server.py
+MLFLOW_MCP_SERVER_PATH: str = "agent_tools/mlflow_mcp_server.py"
 
 
 # =============================================================================

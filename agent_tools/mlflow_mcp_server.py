@@ -7,15 +7,14 @@ complete observability for LLM and agent workflows.
 """
 
 import os
-import re
 import json
 import logging
-import requests
 from typing import Any, Optional, Dict, List
 from datetime import datetime
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
+from mlflow.tracking import MlflowClient
+from mlflow.entities import ViewType
 
 
 # Configure logging
@@ -26,75 +25,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-MLFLOW_API_VERSION: str = "/api/2.0/mlflow"
 DEFAULT_LIMIT: int = 100
 MAX_RESULTS: int = 1000
 
 
-class MLflowConfig(BaseModel):
-    """Configuration for MLflow API access."""
-
-    tracking_uri: str = Field(..., description="MLflow tracking server URI")
-    token: Optional[str] = Field(None, description="Databricks token or auth token")
-
-    @classmethod
-    def from_env(cls) -> "MLflowConfig":
-        """Create configuration from environment variables."""
-        tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
-        if not tracking_uri:
-            raise ValueError(
-                "MLFLOW_TRACKING_URI environment variable must be set. "
-                "For Databricks: set to 'databricks' or your workspace URL. "
-                "For local: set to 'http://localhost:5000'"
-            )
-
-        # Handle 'databricks' shorthand
-        if tracking_uri == "databricks":
-            databricks_host = os.getenv("DATABRICKS_HOST")
-            if not databricks_host:
-                raise ValueError(
-                    "DATABRICKS_HOST must be set when using MLFLOW_TRACKING_URI='databricks'"
-                )
-            tracking_uri = databricks_host.rstrip("/")
-
-        token = os.getenv("DATABRICKS_TOKEN") or os.getenv("MLFLOW_TRACKING_TOKEN")
-        return cls(tracking_uri=tracking_uri.rstrip("/"), token=token)
-
-
-def _make_request(
-    endpoint: str,
-    config: MLflowConfig,
-    method: str = "GET",
-    params: Optional[Dict[str, Any]] = None,
-    json_data: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Make an authenticated request to the MLflow tracking server."""
-    url = f"{config.tracking_uri}{MLFLOW_API_VERSION}{endpoint}"
-    headers = {"Content-Type": "application/json"}
-
-    if config.token:
-        headers["Authorization"] = f"Bearer {config.token}"
-
-    logger.debug(f"Making {method} request to {url}")
-
-    response = requests.request(
-        method=method,
-        url=url,
-        headers=headers,
-        params=params,
-        json=json_data,
-        timeout=30,
-    )
-    response.raise_for_status()
-
-    if response.text:
-        return response.json()
-    return {}
+def _get_mlflow_client() -> MlflowClient:
+    """Get an initialized MLflow client."""
+    # MLflow client will use environment variables automatically:
+    # - MLFLOW_TRACKING_URI
+    # - DATABRICKS_HOST and DATABRICKS_TOKEN (for Databricks)
+    return MlflowClient()
 
 
 def _resolve_experiment_id(
     experiment_identifier: str,
-    config: MLflowConfig,
+    client: MlflowClient,
 ) -> str:
     """Resolve experiment name or ID to a valid experiment ID."""
     # If it's numeric, assume it's already an ID
@@ -106,23 +51,17 @@ def _resolve_experiment_id(
     logger.info(f"Resolving experiment name '{experiment_identifier}' to ID...")
 
     try:
-        # Use search experiments endpoint
-        response = _make_request(
-            "/experiments/search",
-            config,
-            method="POST",
-            json_data={"max_results": 1000},
-        )
+        # Try to get experiment by name directly
+        experiment = client.get_experiment_by_name(experiment_identifier)
+        if experiment:
+            exp_id = experiment.experiment_id
+            logger.info(f"Resolved '{experiment_identifier}' to ID: {exp_id}")
+            return exp_id
 
-        experiments = response.get("experiments", [])
+        # If not found, search all experiments for similar names
+        experiments = client.search_experiments(view_type=ViewType.ALL)
+        available_names = [e.name for e in experiments]
 
-        for exp in experiments:
-            if exp.get("name") == experiment_identifier:
-                exp_id = exp.get("experiment_id")
-                logger.info(f"Resolved '{experiment_identifier}' to ID: {exp_id}")
-                return exp_id
-
-        available_names = [e.get("name") for e in experiments if e.get("name")]
         raise ValueError(
             f"Experiment '{experiment_identifier}' not found. "
             f"Available experiments: {', '.join(available_names[:10])}"
@@ -162,21 +101,38 @@ def list_experiments(
     """
     try:
         logger.info("Listing MLflow experiments...")
-        config = MLflowConfig.from_env()
+        client = _get_mlflow_client()
 
-        payload = {"max_results": min(max_results, MAX_RESULTS), "view_type": view_type}
+        # Map view_type string to ViewType enum
+        view_type_map = {
+            "ACTIVE_ONLY": ViewType.ACTIVE_ONLY,
+            "DELETED_ONLY": ViewType.DELETED_ONLY,
+            "ALL": ViewType.ALL,
+        }
+        view = view_type_map.get(view_type, ViewType.ACTIVE_ONLY)
 
-        if name_contains:
-            # Use ILIKE for case-insensitive matching
-            payload["filter"] = f"name ILIKE '%{name_contains}%'"
-
-        response = _make_request(
-            "/experiments/search", config, method="POST", json_data=payload
+        # Search experiments
+        experiments = client.search_experiments(
+            view_type=view,
+            max_results=min(max_results, MAX_RESULTS),
         )
 
-        experiments = response.get("experiments", [])
-        logger.info(f"Found {len(experiments)} experiments")
-        return experiments
+        # Convert to dict and filter by name if specified
+        result = []
+        for exp in experiments:
+            if name_contains and name_contains.lower() not in exp.name.lower():
+                continue
+
+            result.append({
+                "experiment_id": exp.experiment_id,
+                "name": exp.name,
+                "artifact_location": exp.artifact_location,
+                "lifecycle_stage": exp.lifecycle_stage,
+                "tags": exp.tags,
+            })
+
+        logger.info(f"Found {len(result)} experiments")
+        return result
     except Exception as e:
         logger.error(f"Error listing experiments: {e}")
         raise
@@ -199,40 +155,47 @@ def get_experiment_info(
     """
     try:
         logger.info(f"Getting experiment info for: {experiment_id_or_name}")
-        config = MLflowConfig.from_env()
-        exp_id = _resolve_experiment_id(experiment_id_or_name, config)
+        client = _get_mlflow_client()
+        exp_id = _resolve_experiment_id(experiment_id_or_name, client)
 
         # Get experiment details
-        response = _make_request("/experiments/get", config, params={"experiment_id": exp_id})
-        experiment = response.get("experiment", {})
+        experiment = client.get_experiment(exp_id)
+
+        result = {
+            "experiment_id": experiment.experiment_id,
+            "name": experiment.name,
+            "artifact_location": experiment.artifact_location,
+            "lifecycle_stage": experiment.lifecycle_stage,
+            "tags": experiment.tags,
+            "creation_time": experiment.creation_time,
+            "last_update_time": experiment.last_update_time,
+        }
 
         if include_run_stats:
             # Get run statistics
-            runs_response = _make_request(
-                "/runs/search",
-                config,
-                method="POST",
-                json_data={"experiment_ids": [exp_id], "max_results": 1},
+            runs = client.search_runs(
+                experiment_ids=[exp_id],
+                max_results=5,
+                order_by=["attributes.start_time DESC"],
             )
-            total_runs = runs_response.get("total_count", 0)
-            experiment["total_runs"] = total_runs
 
-            # Get recent runs
-            if total_runs > 0:
-                recent_runs = _make_request(
-                    "/runs/search",
-                    config,
-                    method="POST",
-                    json_data={
-                        "experiment_ids": [exp_id],
-                        "max_results": 5,
-                        "order_by": ["start_time DESC"],
-                    },
-                )
-                experiment["recent_runs"] = recent_runs.get("runs", [])
+            result["total_runs"] = len(runs)
 
-        logger.info(f"Retrieved experiment info for: {experiment.get('name')}")
-        return experiment
+            # Get recent runs summary
+            if runs:
+                result["recent_runs"] = [
+                    {
+                        "run_id": run.info.run_id,
+                        "run_name": run.info.run_name,
+                        "status": run.info.status,
+                        "start_time": run.info.start_time,
+                        "end_time": run.info.end_time,
+                    }
+                    for run in runs[:5]
+                ]
+
+        logger.info(f"Retrieved experiment info for: {result['name']}")
+        return result
     except Exception as e:
         logger.error(f"Error getting experiment info: {e}")
         raise
@@ -257,19 +220,16 @@ def create_experiment(
     """
     try:
         logger.info(f"Creating experiment: {name}")
-        config = MLflowConfig.from_env()
+        client = _get_mlflow_client()
 
-        payload = {"name": name}
+        experiment_id = client.create_experiment(
+            name=name,
+            artifact_location=artifact_location,
+            tags=tags,
+        )
 
-        if artifact_location:
-            payload["artifact_location"] = artifact_location
-
-        if tags:
-            payload["tags"] = [{"key": k, "value": v} for k, v in tags.items()]
-
-        response = _make_request("/experiments/create", config, method="POST", json_data=payload)
-        logger.info(f"Created experiment with ID: {response.get('experiment_id')}")
-        return response
+        logger.info(f"Created experiment with ID: {experiment_id}")
+        return {"experiment_id": experiment_id}
     except Exception as e:
         logger.error(f"Error creating experiment: {e}")
         raise
@@ -296,38 +256,55 @@ def search_runs(
         experiment_names: List of experiment names to search in (alternative to IDs)
         filter_string: MLflow search filter (e.g., "metrics.accuracy > 0.9 AND params.model = 'gpt-4'")
         max_results: Maximum number of runs to return (default: 100)
-        order_by: List of order by clauses (e.g., ["start_time DESC", "metrics.accuracy DESC"])
+        order_by: List of order by clauses (e.g., ["attributes.start_time DESC", "metrics.accuracy DESC"])
 
     Returns:
         List of run dictionaries with info, data (metrics/params/tags), and metadata
     """
     try:
         logger.info("Searching MLflow runs...")
-        config = MLflowConfig.from_env()
+        client = _get_mlflow_client()
 
         # Resolve experiment names to IDs if provided
         if experiment_names:
-            resolved_ids = [_resolve_experiment_id(name, config) for name in experiment_names]
+            resolved_ids = [_resolve_experiment_id(name, client) for name in experiment_names]
             experiment_ids = (experiment_ids or []) + resolved_ids
 
-        payload = {"max_results": min(max_results, MAX_RESULTS)}
+        # Set default order_by if not specified
+        if not order_by:
+            order_by = ["attributes.start_time DESC"]
 
-        if experiment_ids:
-            payload["experiment_ids"] = experiment_ids
+        # Search runs using MLflow client
+        runs = client.search_runs(
+            experiment_ids=experiment_ids,
+            filter_string=filter_string or "",
+            max_results=min(max_results, MAX_RESULTS),
+            order_by=order_by,
+        )
 
-        if filter_string:
-            payload["filter"] = filter_string
+        # Convert Run objects to dictionaries
+        result = []
+        for run in runs:
+            result.append({
+                "info": {
+                    "run_id": run.info.run_id,
+                    "run_name": run.info.run_name,
+                    "experiment_id": run.info.experiment_id,
+                    "status": run.info.status,
+                    "start_time": run.info.start_time,
+                    "end_time": run.info.end_time,
+                    "artifact_uri": run.info.artifact_uri,
+                    "lifecycle_stage": run.info.lifecycle_stage,
+                },
+                "data": {
+                    "metrics": [{"key": k, "value": v} for k, v in run.data.metrics.items()],
+                    "params": [{"key": k, "value": v} for k, v in run.data.params.items()],
+                    "tags": [{"key": k, "value": v} for k, v in run.data.tags.items()],
+                },
+            })
 
-        if order_by:
-            payload["order_by"] = order_by
-        else:
-            payload["order_by"] = ["start_time DESC"]
-
-        response = _make_request("/runs/search", config, method="POST", json_data=payload)
-        runs = response.get("runs", [])
-
-        logger.info(f"Found {len(runs)} runs")
-        return runs
+        logger.info(f"Found {len(result)} runs")
+        return result
     except Exception as e:
         logger.error(f"Error searching runs: {e}")
         raise
@@ -350,24 +327,49 @@ def get_run_details(
     """
     try:
         logger.info(f"Getting run details for: {run_id}")
-        config = MLflowConfig.from_env()
+        client = _get_mlflow_client()
 
-        response = _make_request("/runs/get", config, params={"run_id": run_id})
-        run = response.get("run", {})
+        run = client.get_run(run_id)
+
+        result = {
+            "info": {
+                "run_id": run.info.run_id,
+                "run_name": run.info.run_name,
+                "experiment_id": run.info.experiment_id,
+                "status": run.info.status,
+                "start_time": run.info.start_time,
+                "end_time": run.info.end_time,
+                "artifact_uri": run.info.artifact_uri,
+                "lifecycle_stage": run.info.lifecycle_stage,
+            },
+            "data": {
+                "metrics": [{"key": k, "value": v} for k, v in run.data.metrics.items()],
+                "params": [{"key": k, "value": v} for k, v in run.data.params.items()],
+                "tags": [{"key": k, "value": v} for k, v in run.data.tags.items()],
+            },
+        }
 
         if include_children:
             # Search for child runs
-            child_runs = _make_request(
-                "/runs/search",
-                config,
-                method="POST",
-                json_data={"filter": f"tags.mlflow.parentRunId = '{run_id}'", "max_results": 100},
+            experiment_id = run.info.experiment_id
+            child_runs = client.search_runs(
+                experiment_ids=[experiment_id],
+                filter_string=f"tags.`mlflow.parentRunId` = '{run_id}'",
+                max_results=100,
             )
-            run["child_runs"] = child_runs.get("runs", [])
-            run["child_run_count"] = len(run["child_runs"])
 
-        logger.info(f"Retrieved run details: {run.get('info', {}).get('run_name', run_id)}")
-        return run
+            result["child_runs"] = [
+                {
+                    "run_id": child.info.run_id,
+                    "run_name": child.info.run_name,
+                    "status": child.info.status,
+                }
+                for child in child_runs
+            ]
+            result["child_run_count"] = len(child_runs)
+
+        logger.info(f"Retrieved run details: {result['info']['run_name']}")
+        return result
     except Exception as e:
         logger.error(f"Error getting run details: {e}")
         raise
@@ -390,27 +392,41 @@ def get_latest_run(
     """
     try:
         logger.info(f"Getting latest run from experiment: {experiment_id_or_name}")
-        config = MLflowConfig.from_env()
-        exp_id = _resolve_experiment_id(experiment_id_or_name, config)
+        client = _get_mlflow_client()
+        exp_id = _resolve_experiment_id(experiment_id_or_name, client)
 
-        payload = {
-            "experiment_ids": [exp_id],
-            "max_results": 1,
-            "order_by": ["start_time DESC"],
-        }
+        filter_str = f"attributes.status = '{status_filter}'" if status_filter else ""
 
-        if status_filter:
-            payload["filter"] = f"attributes.status = '{status_filter}'"
-
-        response = _make_request("/runs/search", config, method="POST", json_data=payload)
-        runs = response.get("runs", [])
+        runs = client.search_runs(
+            experiment_ids=[exp_id],
+            filter_string=filter_str,
+            max_results=1,
+            order_by=["attributes.start_time DESC"],
+        )
 
         if not runs:
             logger.warning(f"No runs found in experiment {experiment_id_or_name}")
             return {"error": "No runs found matching criteria"}
 
-        logger.info(f"Found latest run: {runs[0].get('info', {}).get('run_id')}")
-        return runs[0]
+        run = runs[0]
+        result = {
+            "info": {
+                "run_id": run.info.run_id,
+                "run_name": run.info.run_name,
+                "experiment_id": run.info.experiment_id,
+                "status": run.info.status,
+                "start_time": run.info.start_time,
+                "end_time": run.info.end_time,
+            },
+            "data": {
+                "metrics": [{"key": k, "value": v} for k, v in run.data.metrics.items()],
+                "params": [{"key": k, "value": v} for k, v in run.data.params.items()],
+                "tags": [{"key": k, "value": v} for k, v in run.data.tags.items()],
+            },
+        }
+
+        logger.info(f"Found latest run: {result['info']['run_id']}")
+        return result
     except Exception as e:
         logger.error(f"Error getting latest run: {e}")
         raise
@@ -433,36 +449,46 @@ def get_latest_error_run(
     """
     try:
         logger.info(f"Getting latest error run from: {experiment_id_or_name}")
-        config = MLflowConfig.from_env()
-        exp_id = _resolve_experiment_id(experiment_id_or_name, config)
+        client = _get_mlflow_client()
+        exp_id = _resolve_experiment_id(experiment_id_or_name, client)
 
-        payload = {
-            "experiment_ids": [exp_id],
-            "max_results": 1,
-            "order_by": ["start_time DESC"],
-            "filter": "attributes.status = 'FAILED'",
-        }
-
-        response = _make_request("/runs/search", config, method="POST", json_data=payload)
-        runs = response.get("runs", [])
+        runs = client.search_runs(
+            experiment_ids=[exp_id],
+            filter_string="attributes.status = 'FAILED'",
+            max_results=1,
+            order_by=["attributes.start_time DESC"],
+        )
 
         if not runs:
             logger.info(f"No failed runs found in experiment {experiment_id_or_name}")
             return {"message": "No failed runs found"}
 
-        error_run = runs[0]
+        run = runs[0]
+        result = {
+            "info": {
+                "run_id": run.info.run_id,
+                "run_name": run.info.run_name,
+                "experiment_id": run.info.experiment_id,
+                "status": run.info.status,
+                "start_time": run.info.start_time,
+                "end_time": run.info.end_time,
+            },
+            "data": {
+                "metrics": [{"key": k, "value": v} for k, v in run.data.metrics.items()],
+                "params": [{"key": k, "value": v} for k, v in run.data.params.items()],
+                "tags": [{"key": k, "value": v} for k, v in run.data.tags.items()],
+            },
+        }
 
-        # Check for error tag or attribute
-        tags = error_run.get("data", {}).get("tags", [])
-        error_tag = next((t for t in tags if t.get("key") == "error"), None)
+        # Truncate error message if not including full traceback
+        if not include_traceback:
+            error_tags = [t for t in result["data"]["tags"] if t["key"] == "error"]
+            for tag in error_tags:
+                if len(tag["value"]) > 1000:
+                    tag["value"] = tag["value"][:1000] + "..."
 
-        if error_tag and not include_traceback:
-            error_msg = error_tag.get("value", "")
-            if len(error_msg) > 1000:
-                error_tag["value"] = error_msg[:1000] + "..."
-
-        logger.info(f"Found failed run: {error_run.get('info', {}).get('run_id')}")
-        return error_run
+        logger.info(f"Found failed run: {result['info']['run_id']}")
+        return result
     except Exception as e:
         logger.error(f"Error getting latest error run: {e}")
         raise
@@ -487,7 +513,7 @@ def compare_runs(
     """
     try:
         logger.info(f"Comparing {len(run_ids)} runs...")
-        config = MLflowConfig.from_env()
+        client = _get_mlflow_client()
 
         if len(run_ids) < 2:
             raise ValueError("Need at least 2 runs to compare")
@@ -499,8 +525,8 @@ def compare_runs(
         runs = []
         for run_id in run_ids:
             try:
-                response = _make_request("/runs/get", config, params={"run_id": run_id})
-                runs.append(response.get("run", {}))
+                run = client.get_run(run_id)
+                runs.append(run)
             except Exception as e:
                 logger.warning(f"Failed to fetch run {run_id}: {e}")
                 continue
@@ -522,32 +548,19 @@ def compare_runs(
         all_params = set()
 
         for run in runs:
-            run_data = run.get("data", {})
-            run_info = run.get("info", {})
-
             run_summary = {
-                "run_id": run_info.get("run_id"),
-                "run_name": run_info.get("run_name"),
-                "status": run_info.get("status"),
-                "start_time": run_info.get("start_time"),
-                "end_time": run_info.get("end_time"),
-                "metrics": {},
-                "params": {},
+                "run_id": run.info.run_id,
+                "run_name": run.info.run_name,
+                "status": run.info.status,
+                "start_time": run.info.start_time,
+                "end_time": run.info.end_time,
+                "metrics": run.data.metrics,
+                "params": run.data.params,
             }
 
-            # Extract metrics
-            for metric in run_data.get("metrics", []):
-                metric_key = metric.get("key")
-                metric_value = metric.get("value")
-                all_metrics.add(metric_key)
-                run_summary["metrics"][metric_key] = metric_value
-
-            # Extract params
-            for param in run_data.get("params", []):
-                param_key = param.get("key")
-                param_value = param.get("value")
-                all_params.add(param_key)
-                run_summary["params"][param_key] = param_value
+            # Collect all metric and param names
+            all_metrics.update(run.data.metrics.keys())
+            all_params.update(run.data.params.keys())
 
             comparison["runs"].append(run_summary)
 
@@ -624,19 +637,22 @@ def get_metric_history(
     """
     try:
         logger.info(f"Getting metric history for {metric_key} in run {run_id}")
-        config = MLflowConfig.from_env()
+        client = _get_mlflow_client()
 
-        params = {
-            "run_id": run_id,
-            "metric_key": metric_key,
-            "max_results": min(max_results, MAX_RESULTS),
-        }
+        metric_history = client.get_metric_history(run_id, metric_key)
 
-        response = _make_request("/metrics/get-history", config, params=params)
-        metrics = response.get("metrics", [])
+        # Convert to dict format and limit results
+        result = [
+            {
+                "timestamp": metric.timestamp,
+                "step": metric.step,
+                "value": metric.value,
+            }
+            for metric in metric_history[:min(max_results, MAX_RESULTS)]
+        ]
 
-        logger.info(f"Retrieved {len(metrics)} metric history entries")
-        return metrics
+        logger.info(f"Retrieved {len(result)} metric history entries")
+        return result
     except Exception as e:
         logger.error(f"Error getting metric history: {e}")
         raise
@@ -664,17 +680,22 @@ def list_artifacts(
     """
     try:
         logger.info(f"Listing artifacts for run {run_id} at path: {path or 'root'}")
-        config = MLflowConfig.from_env()
+        client = _get_mlflow_client()
 
-        params = {"run_id": run_id}
-        if path:
-            params["path"] = path
+        artifacts = client.list_artifacts(run_id, path)
 
-        response = _make_request("/artifacts/list", config, params=params)
-        files = response.get("files", [])
+        # Convert to dict format
+        result = [
+            {
+                "path": artifact.path,
+                "is_dir": artifact.is_dir,
+                "file_size": artifact.file_size,
+            }
+            for artifact in artifacts
+        ]
 
-        logger.info(f"Found {len(files)} artifacts")
-        return files
+        logger.info(f"Found {len(result)} artifacts")
+        return result
     except Exception as e:
         logger.error(f"Error listing artifacts: {e}")
         raise
@@ -702,20 +723,44 @@ def get_child_runs(
     """
     try:
         logger.info(f"Getting child runs for parent: {parent_run_id}")
-        config = MLflowConfig.from_env()
+        client = _get_mlflow_client()
+
+        # First get the parent run to find its experiment_id
+        try:
+            parent_run = client.get_run(parent_run_id)
+            experiment_id = parent_run.info.experiment_id
+        except Exception as e:
+            logger.error(f"Failed to get parent run {parent_run_id}: {e}")
+            return []
 
         # Search for runs with parent run ID tag
-        payload = {
-            "filter": f"tags.mlflow.parentRunId = '{parent_run_id}'",
-            "max_results": min(max_results, MAX_RESULTS),
-            "order_by": ["start_time ASC"],
-        }
+        child_runs = client.search_runs(
+            experiment_ids=[experiment_id],
+            filter_string=f"tags.`mlflow.parentRunId` = '{parent_run_id}'",
+            max_results=min(max_results, MAX_RESULTS),
+            order_by=["attributes.start_time ASC"],
+        )
 
-        response = _make_request("/runs/search", config, method="POST", json_data=payload)
-        child_runs = response.get("runs", [])
+        # Convert to dict format
+        result = []
+        for run in child_runs:
+            result.append({
+                "info": {
+                    "run_id": run.info.run_id,
+                    "run_name": run.info.run_name,
+                    "status": run.info.status,
+                    "start_time": run.info.start_time,
+                    "end_time": run.info.end_time,
+                },
+                "data": {
+                    "metrics": [{"key": k, "value": v} for k, v in run.data.metrics.items()],
+                    "params": [{"key": k, "value": v} for k, v in run.data.params.items()],
+                    "tags": [{"key": k, "value": v} for k, v in run.data.tags.items()],
+                },
+            })
 
-        logger.info(f"Found {len(child_runs)} child runs")
-        return child_runs
+        logger.info(f"Found {len(result)} child runs")
+        return result
     except Exception as e:
         logger.error(f"Error getting child runs: {e}")
         raise
@@ -738,7 +783,7 @@ def get_run_trace(
     """
     try:
         logger.info(f"Building execution trace for run: {run_id}")
-        config = MLflowConfig.from_env()
+        client = _get_mlflow_client()
 
         def _build_trace_recursive(
             current_run_id: str,
@@ -749,56 +794,53 @@ def get_run_trace(
                 return {"error": "Max depth reached"}
 
             # Get run details
-            response = _make_request("/runs/get", config, params={"run_id": current_run_id})
-            run = response.get("run", {})
-
-            run_info = run.get("info", {})
-            run_data = run.get("data", {})
+            try:
+                run = client.get_run(current_run_id)
+            except Exception as e:
+                logger.error(f"Failed to get run {current_run_id}: {e}")
+                return {"error": f"Failed to fetch run: {str(e)}"}
 
             # Build lightweight summary
             trace_node = {
-                "run_id": run_info.get("run_id"),
-                "run_name": run_info.get("run_name"),
-                "status": run_info.get("status"),
-                "start_time": run_info.get("start_time"),
-                "end_time": run_info.get("end_time"),
-                "duration_ms": run_info.get("end_time", 0) - run_info.get("start_time", 0),
+                "run_id": run.info.run_id,
+                "run_name": run.info.run_name,
+                "status": run.info.status,
+                "start_time": run.info.start_time,
+                "end_time": run.info.end_time,
+                "duration_ms": run.info.end_time - run.info.start_time if run.info.end_time else 0,
                 "depth": current_depth,
                 "children": [],
             }
 
             # Add key metrics/params
-            metrics = {m["key"]: m["value"] for m in run_data.get("metrics", [])}
-            params = {p["key"]: p["value"] for p in run_data.get("params", [])}
+            if run.data.metrics:
+                trace_node["metrics"] = run.data.metrics
 
-            if metrics:
-                trace_node["metrics"] = metrics
-            if params:
-                trace_node["params"] = params
+            if run.data.params:
+                trace_node["params"] = run.data.params
 
             # Check for error
-            tags = {t["key"]: t["value"] for t in run_data.get("tags", [])}
-            if run_info.get("status") == "FAILED":
-                trace_node["error"] = tags.get("error", "Unknown error")
+            if run.info.status == "FAILED":
+                trace_node["error"] = run.data.tags.get("error", "Unknown error")
+
+            # Get experiment ID for the search
+            experiment_id = run.info.experiment_id
 
             # Get child runs
-            child_response = _make_request(
-                "/runs/search",
-                config,
-                method="POST",
-                json_data={
-                    "filter": f"tags.mlflow.parentRunId = '{current_run_id}'",
-                    "max_results": 100,
-                    "order_by": ["start_time ASC"],
-                },
-            )
-
-            child_runs = child_response.get("runs", [])
+            try:
+                child_runs = client.search_runs(
+                    experiment_ids=[experiment_id],
+                    filter_string=f"tags.`mlflow.parentRunId` = '{current_run_id}'",
+                    max_results=100,
+                    order_by=["attributes.start_time ASC"],
+                )
+            except Exception as e:
+                logger.warning(f"Failed to search for child runs of {current_run_id}: {e}")
+                child_runs = []
 
             # Recursively build children
             for child in child_runs:
-                child_id = child.get("info", {}).get("run_id")
-                child_trace = _build_trace_recursive(child_id, current_depth + 1)
+                child_trace = _build_trace_recursive(child.info.run_id, current_depth + 1)
                 trace_node["children"].append(child_trace)
 
             trace_node["child_count"] = len(trace_node["children"])
@@ -811,6 +853,8 @@ def get_run_trace(
         # Add summary statistics
         def _count_runs(node: Dict[str, Any]) -> int:
             """Count total runs in tree."""
+            if "error" in node and "run_id" not in node:
+                return 0
             count = 1
             for child in node.get("children", []):
                 count += _count_runs(child)
@@ -845,21 +889,15 @@ def get_experiment_statistics(
     """
     try:
         logger.info(f"Calculating statistics for experiment: {experiment_id_or_name}")
-        config = MLflowConfig.from_env()
-        exp_id = _resolve_experiment_id(experiment_id_or_name, config)
+        client = _get_mlflow_client()
+        exp_id = _resolve_experiment_id(experiment_id_or_name, client)
 
         # Get all runs
-        response = _make_request(
-            "/runs/search",
-            config,
-            method="POST",
-            json_data={
-                "experiment_ids": [exp_id],
-                "max_results": MAX_RESULTS,
-            },
+        runs = client.search_runs(
+            experiment_ids=[exp_id],
+            max_results=MAX_RESULTS,
         )
 
-        runs = response.get("runs", [])
         total_runs = len(runs)
 
         if total_runs == 0:
@@ -875,7 +913,7 @@ def get_experiment_statistics(
         }
 
         # Status distribution
-        statuses = [r.get("info", {}).get("status") for r in runs]
+        statuses = [r.info.status for r in runs]
         for status in set(statuses):
             count = statuses.count(status)
             stats["status_distribution"][status] = {
@@ -886,10 +924,7 @@ def get_experiment_statistics(
         # Collect all metrics
         all_metrics = {}
         for run in runs:
-            for metric in run.get("data", {}).get("metrics", []):
-                metric_key = metric.get("key")
-                metric_value = metric.get("value")
-
+            for metric_key, metric_value in run.data.metrics.items():
                 if metric_key not in all_metrics:
                     all_metrics[metric_key] = []
 
@@ -915,12 +950,12 @@ def get_experiment_statistics(
         recent_24h = sum(
             1
             for r in runs
-            if current_time - r.get("info", {}).get("start_time", 0) < day_ms
+            if current_time - r.info.start_time < day_ms
         )
         recent_7d = sum(
             1
             for r in runs
-            if current_time - r.get("info", {}).get("start_time", 0) < week_ms
+            if current_time - r.info.start_time < week_ms
         )
 
         stats["recent_activity"] = {
@@ -952,22 +987,15 @@ def analyze_llm_traces(
     """
     try:
         logger.info(f"Analyzing LLM traces for experiment: {experiment_id_or_name}")
-        config = MLflowConfig.from_env()
-        exp_id = _resolve_experiment_id(experiment_id_or_name, config)
+        client = _get_mlflow_client()
+        exp_id = _resolve_experiment_id(experiment_id_or_name, client)
 
         # Get recent runs
-        response = _make_request(
-            "/runs/search",
-            config,
-            method="POST",
-            json_data={
-                "experiment_ids": [exp_id],
-                "max_results": min(max_traces, MAX_RESULTS),
-                "order_by": ["start_time DESC"],
-            },
+        runs = client.search_runs(
+            experiment_ids=[exp_id],
+            max_results=min(max_traces, MAX_RESULTS),
+            order_by=["attributes.start_time DESC"],
         )
-
-        runs = response.get("runs", [])
 
         if not runs:
             return {"message": "No runs found to analyze"}
@@ -988,32 +1016,23 @@ def analyze_llm_traces(
         completion_tokens = []
 
         for run in runs:
-            run_info = run.get("info", {})
-            run_data = run.get("data", {})
-
             # Extract latency
-            start_time = run_info.get("start_time", 0)
-            end_time = run_info.get("end_time", 0)
-            if start_time and end_time:
-                latency_ms = end_time - start_time
+            if run.info.start_time and run.info.end_time:
+                latency_ms = run.info.end_time - run.info.start_time
                 latencies.append(latency_ms)
 
             # Check for errors
-            if run_info.get("status") == "FAILED":
-                tags = {t["key"]: t["value"] for t in run_data.get("tags", [])}
-                error_msg = tags.get("error", "Unknown error")
+            if run.info.status == "FAILED":
+                error_msg = run.data.tags.get("error", "Unknown error")
                 errors.append(error_msg[:200])
 
             # Extract model info from tags or params
-            params = {p["key"]: p["value"] for p in run_data.get("params", [])}
-            tags = {t["key"]: t["value"] for t in run_data.get("tags", [])}
-
-            model = params.get("model") or tags.get("model_name") or tags.get("model")
+            model = run.data.params.get("model") or run.data.tags.get("model_name") or run.data.tags.get("model")
             if model:
                 models.append(model)
 
             # Extract token usage from metrics
-            metrics = {m["key"]: m["value"] for m in run_data.get("metrics", [])}
+            metrics = run.data.metrics
 
             if "total_tokens" in metrics:
                 total_tokens.append(metrics["total_tokens"])

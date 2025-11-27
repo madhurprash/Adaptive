@@ -3,6 +3,7 @@ import os
 import json
 import uuid
 import boto3
+import mlflow
 import argparse
 from tools import *
 from utils import *
@@ -18,18 +19,11 @@ from langchain_aws import ChatBedrock
 from langchain.agents import create_agent
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import InMemorySaver
-from typing import List, Optional, Any, List, Dict, Literal, Annotated
+from typing import List, Optional, Any, Dict, Literal, Annotated
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 # we will add the basic and the advanced model based on the
 # message history size
 from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-
-# Import MLflow tracing
-from mlflow_integration import (
-    initialize_mlflow,
-    track_agent_execution,
-)
-from mlflow_integration.mlflow_tracer import annotate_span
 
 # Import Langfuse for LangChain tracing
 from langfuse.langchain import CallbackHandler
@@ -37,6 +31,8 @@ from langfuse.langchain import CallbackHandler
 # Import Datadog tracing
 from ddtrace import tracer, patch_all
 from ddtrace.llmobs import LLMObs
+
+from mlflow.entities import SpanType
 
 """
 This is an agent that is responsible for autotuning lambda functions
@@ -97,18 +93,29 @@ investigate and consider increasing memory.
 
 6. Apply action: Finally, the agent will apply the decided action by updating the lambda
 """
-print(f"Loading the env vars...")
+
+print("Loading the env vars...")
 load_dotenv()
 
-# Initialize MLflow Tracing
-print("Initializing MLflow Tracing...")
-mlflow_initialized = initialize_mlflow()
-if mlflow_initialized:
-    logger.info("MLflow tracing initialized successfully")
-    print("✅ MLflow tracing enabled")
-else:
-    logger.info("Running without MLflow tracing")
-    print("⚠️  MLflow tracing not configured (check DATABRICKS_HOST and DATABRICKS_TOKEN)")
+# ---------- MLflow Tracing setup ----------
+MLFLOW_EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME")
+if not MLFLOW_EXPERIMENT_NAME:
+    raise ValueError(
+        "MLFLOW_EXPERIMENT_NAME environment variable not set. "
+        "Please set it in your environment or .env file."
+    )
+
+# Tracking URI; for Databricks this should be "databricks"
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "databricks"))
+mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+
+# Enable auto-tracing for LangChain and Bedrock
+try:
+    mlflow.langchain.autolog()
+    mlflow.bedrock.autolog(silent=True)
+    logger.info("Initialized MLflow LangChain and Bedrock autologging")
+except Exception as e:
+    logger.warning(f"MLflow autolog initialization warning (non-critical): {e}")
 
 # Initialize Datadog APM Tracing
 print("Initializing Datadog APM...")
@@ -123,7 +130,7 @@ if datadog_enabled:
         LLMObs.enable(
             ml_app=os.getenv("DD_SERVICE", "lambda-autotuner-agent"),
             integrations_enabled=True,
-            agentless_enabled=True
+            agentless_enabled=True,
         )
         logger.info("Datadog LLM Observability enabled")
         print("✅ Datadog APM with LLM Observability enabled")
@@ -156,48 +163,66 @@ if not tavily_api_key:
 tavily_client = TavilyClient(api_key=tavily_api_key)
 logger.info("Initialized Tavily client for internet search")
 
-
 # Initialize the bedrock configuration
 bedrock_config = Config(
-    read_timeout=12000, 
+    read_timeout=12000,
     connect_timeout=60,
     retries={
-        'max_attempts': 3,
-        'mode': 'standard'
-    }
+        "max_attempts": 3,
+        "mode": "standard",
+    },
 )
 
 # Initialize the bedrock runtime client
 bedrock_runtime_client = boto3.client(
     service_name="bedrock-runtime",
     region_name=boto3.session.Session().region_name,
-    config=bedrock_config
+    config=bedrock_config,
 )
 
 # initialize the bedrock model
 basic_default_model = ChatBedrock(
     client=bedrock_runtime_client,
-    model=config_data['basic_default_model_information']['model_id'],
-    temperature=config_data['basic_default_model_information']["inference_parameters"]["temperature"],
-    max_tokens=config_data['basic_default_model_information']["inference_parameters"]["max_tokens"],
-    top_p=config_data['basic_default_model_information']["inference_parameters"]["top_p"],
+    model=config_data["basic_default_model_information"]["model_id"],
+    temperature=config_data["basic_default_model_information"]["inference_parameters"][
+        "temperature"
+    ],
+    max_tokens=config_data["basic_default_model_information"]["inference_parameters"][
+        "max_tokens"
+    ],
+    top_p=config_data["basic_default_model_information"]["inference_parameters"]["top_p"],
 )
-print(f"Initialized the basic amazon Bedrock model: {config_data['basic_default_model_information']['model_id']}")
+print(
+    f"Initialized the basic amazon Bedrock model: "
+    f"{config_data['basic_default_model_information']['model_id']}"
+)
 
 # let's also configure the advanced model to route the request to based on some intelligent routing criteria
 advanced_model = ChatBedrock(
     client=bedrock_runtime_client,
-    model=config_data['advanced_model_information']['model_id'],
-    temperature=config_data['advanced_model_information']["inference_parameters"]["temperature"],
-    max_tokens=config_data['advanced_model_information']["inference_parameters"]["max_tokens"],
-    top_p=config_data['advanced_model_information']["inference_parameters"]["top_p"],
+    model=config_data["advanced_model_information"]["model_id"],
+    temperature=config_data["advanced_model_information"]["inference_parameters"][
+        "temperature"
+    ],
+    max_tokens=config_data["advanced_model_information"]["inference_parameters"][
+        "max_tokens"
+    ],
+    top_p=config_data["advanced_model_information"]["inference_parameters"]["top_p"],
 )
-print(f"Initialized the advanced model that the requests will route to when the number of ")
+print(
+    "Initialized the advanced model that the requests will route to "
+    "when the number of messages is high"
+)
 
 # Next, we will initialize our agent prompt
-lambda_autotuner_sys_prompt_fpath: str = config_data['agent_prompts'].get('system_prompt_fpath', 'prompts/lambda_autotuner_agent_system_prompt.txt')
-lambda_autotuner_sys_prompt: str = load_system_prompt(lambda_autotuner_sys_prompt_fpath)
+lambda_autotuner_sys_prompt_fpath: str = config_data["agent_prompts"].get(
+    "system_prompt_fpath", "prompts/lambda_autotuner_agent_system_prompt.txt"
+)
+lambda_autotuner_sys_prompt: str = load_system_prompt(
+    lambda_autotuner_sys_prompt_fpath
+)
 print(f"Loaded the lambda agent system prompt: {lambda_autotuner_sys_prompt}")
+
 
 @wrap_model_call
 def dynamic_model_selection(request: ModelRequest, handler) -> ModelResponse:
@@ -215,46 +240,85 @@ def dynamic_model_selection(request: ModelRequest, handler) -> ModelResponse:
 
 
 # Represents the internet search tool to be used by the agent
+@tool
 def internet_search(
-        query: str,
-        max_results: int = 5,
-        include_raw_content: bool = False,
-        topic: str = "general"):
-    """Run a web search"""
-    return tavily_client.search(
-        query,
-        max_results=max_results,
-        include_raw_content=include_raw_content,
-        topic=topic,
-    )
+    query: str,
+    max_results: int = 5,
+    include_raw_content: bool = False,
+) -> str:
+    """
+    Run a web search using Tavily API to find information on the internet.
+
+    Use this tool when you need to search for AWS Lambda optimization strategies,
+    best practices, or any information not available in CloudWatch metrics.
+
+    Args:
+        query: The search query string
+        max_results: Maximum number of results to return (default: 5)
+        include_raw_content: Whether to include raw HTML content (default: False)
+
+    Returns:
+        Search results as formatted string
+    """
+    try:
+        # Always use "general" topic to avoid validation errors
+        result = tavily_client.search(
+            query,
+            max_results=max_results,
+            include_raw_content=include_raw_content,
+            topic="general",
+        )
+        return str(result)
+    except Exception as e:
+        logger.error(f"Error performing internet search: {e}")
+        return f"Error performing search: {str(e)}"
 
 
-# Represents the list of tools that the agent will have access to including the lambda tools 
-# as well as the internet search tools
-tools = [fetch_lambda_metrics, 
-         get_lambda_configuration,
-         analyze_metrics, 
-         decide_action,
-         apply_action,
-         list_lambda_functions,
-         internet_search]
+# Represents the list of tools that the agent will have access to including the lambda tools,
+# CloudWatch monitoring tools, and internet search tools
+tools = [
+    # Lambda optimization tools
+    fetch_lambda_metrics,
+    get_lambda_configuration,
+    analyze_metrics,
+    decide_action,
+    apply_action,
+    list_lambda_functions,
+    # CloudWatch monitoring tools
+    list_cloudwatch_dashboards,
+    get_dashboard_summary,
+    list_log_groups,
+    fetch_cloudwatch_logs_for_service,
+    analyze_log_group,
+    get_cloudwatch_alarms_for_service,
+    # Internet search tool
+    internet_search,
+]
 
 # Create the agent using the create_agent primitive
 agent = create_agent(
-    model = basic_default_model, # default to the basic model
-    tools = tools, 
-    middleware=[dynamic_model_selection], 
-    system_prompt=lambda_autotuner_sys_prompt
+    model=basic_default_model,  # default to the basic model
+    tools=tools,
+    middleware=[dynamic_model_selection],
+    system_prompt=lambda_autotuner_sys_prompt,
 )
 print(f"Created the lambda agent: {agent}")
+
 
 # In this case, we will create a very simple graph -
 # since this is not a workflow and more of a dynamic agent, we
 # will start off with a base graph structure
 class AgentState(TypedDict):
     """State definition for the lambda autotuner agent."""
+
     messages: List[Any]  # List of messages in the conversation
 
+
+@mlflow.trace(
+    name="lambda_autotuner_node",
+    span_type=SpanType.CHAIN,
+    attributes={"node": "agent"},
+)
 @traceable
 def _invoke_agent(state: AgentState) -> AgentState:
     """
@@ -270,57 +334,26 @@ def _invoke_agent(state: AgentState) -> AgentState:
     Returns:
         Updated agent state with new messages
     """
+    # Get the current messages from state
+    messages = state.get("messages", [])
+    print(
+        "In AGENT INVOCATION NODE: Going to invoke the lambda agent with the context:"
+        f" {messages}"
+    )
+
     try:
-        # Get the current messages from state
-        messages = state.get("messages", [])
-        print(f"In AGENT INVOCATION NODE: Going to invoke the lambda agent with the context: {messages}")
-
-        # Log invocation metadata to MLflow
-        annotate_span(
-            metadata={
-                "input_message_count": len(messages),
-                "graph_node": "agent_invocation"
-            }
-        )
-
         # Invoke the agent with the current messages
         # LangChain will be auto-traced by Datadog's ddtrace-run and Langfuse
         response = agent.invoke(
             {"messages": messages},
-            config={"callbacks": [langfuse_handler]}
+            config={"callbacks": [langfuse_handler]},
         )
         print(f"RESPONSE: {response['messages']}")
-
-        # Log response details to MLflow
-        response_messages = response.get("messages", [])
-        tool_calls_count = sum(
-            1 for msg in response_messages
-            if hasattr(msg, "tool_calls") and msg.tool_calls
-        )
-
-        annotate_span(
-            metadata={
-                "output_message_count": len(response_messages),
-                "tool_calls_made": tool_calls_count
-            },
-            metrics={
-                "agent_turns": 1.0,
-                "tools_invoked": float(tool_calls_count)
-            }
-        )
 
         # Return updated state with agent response
         return {"messages": response["messages"]}
     except Exception as e:
         logger.error(f"Error invoking agent: {e}")
-
-        # Log error to MLflow
-        annotate_span(
-            metadata={
-                "agent_error": str(e),
-                "error_type": type(e).__name__
-            }
-        )
 
         error_message = AIMessage(
             content=f"I encountered an error: {str(e)}. Please try again."
@@ -349,11 +382,12 @@ graph = graph_builder.compile(checkpointer=checkpointer)
 logger.info("Compiled LangGraph with checkpointer")
 
 
-@track_agent_execution(
+@mlflow.trace(
     name="lambda_autotuner_agent",
-    model_name="claude-sonnet-4",
-    model_provider="bedrock"
+    span_type=SpanType.CHAIN,
+    attributes={"app": "lambda-autotuner-agent"},
 )
+@traceable(name="lambda_autotuner_agent")
 def run_agent_with_session(
     user_message: str,
     session_id: str,
@@ -374,74 +408,81 @@ def run_agent_with_session(
     # Create the config with thread_id for session management
     config = {
         "configurable": {
-            "thread_id": session_id
+            "thread_id": session_id,
         }
     }
 
     # Create the user message
     user_msg = HumanMessage(content=user_message)
 
-    try:
-        # Add session metadata to MLflow trace
-        annotate_span(
-            metadata={
+    # Start a new MLflow run for this agent invocation
+    with mlflow.start_run(run_name=f"agent_session_{session_id}", nested=True):
+        try:
+            # Add session metadata to MLflow run
+            mlflow.log_param("session_id", session_id)
+            mlflow.log_param("user_message", user_message)
+            mlflow.log_param("message_length", len(user_message))
+            mlflow.set_tag("agent_type", "lambda_autotuner")
+            mlflow.set_tag("environment", "production")
+
+            # Invoke the graph with the user message
+            result = graph.invoke(
+                {"messages": [user_msg]},
+                config={
+                    **config,
+                    "callbacks": [langfuse_handler],
+                },
+            )
+
+            logger.info(f"Agent completed processing for session: {session_id}")
+
+            # Extract the last message (agent's response)
+            last_message = result["messages"][-1] if result["messages"] else None
+            response_content = last_message.content if last_message else ""
+
+            # Log response metadata to MLflow run
+            mlflow.log_param("response_length", len(response_content))
+            mlflow.log_param("message_count", len(result["messages"]))
+            mlflow.log_metric(
+                "response_characters", float(len(response_content))
+            )
+            mlflow.log_metric(
+                "total_messages", float(len(result["messages"]))
+            )
+
+            # Update the current MLflow trace so the Traces UI shows request/response
+            mlflow.update_current_trace(
+                request_preview=user_message,
+                response_preview=response_content[:500],
+                metadata={
+                    "session_id": session_id,
+                    "environment": "production",
+                    "user": "lambda-cli",
+                },
+            )
+
+            return {
+                "response": response_content,
+                "all_messages": result["messages"],
                 "session_id": session_id,
-                "user_message": user_message,
-                "message_length": len(user_message)
-            },
-            tags={
-                "agent_type": "lambda_autotuner",
-                "environment": "production"
             }
-        )
+        except Exception as e:
+            logger.error(f"Error in session {session_id}: {e}", exc_info=True)
 
-        # Invoke the graph with the user message
-        # Datadog will automatically trace this via ddtrace-run
-        # Langfuse will trace via callback handler
-        result = graph.invoke(
-            {"messages": [user_msg]},
-            config={
-                **config,
-                "callbacks": [langfuse_handler]
-            }
-        )
+            # Mark the error on the trace
+            mlflow.update_current_trace(
+                metadata={
+                    "session_id": session_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                }
+            )
 
-        logger.info(f"Agent completed processing for session: {session_id}")
-
-        # Extract the last message (agent's response)
-        last_message = result["messages"][-1] if result["messages"] else None
-        response_content = last_message.content if last_message else ""
-
-        # Log response metadata to MLflow
-        annotate_span(
-            metadata={
-                "response_length": len(response_content),
-                "message_count": len(result["messages"]),
-                "success": True
-            },
-            metrics={
-                "response_characters": float(len(response_content)),
-                "total_messages": float(len(result["messages"]))
-            }
-        )
-
-        return {
-            "response": response_content,
-            "all_messages": result["messages"],
-            "session_id": session_id
-        }
-    except Exception as e:
-        logger.error(f"Error in session {session_id}: {e}", exc_info=True)
-
-        # Log error to MLflow trace
-        annotate_span(
-            metadata={
-                "success": False,
-                "error": str(e),
-                "error_type": type(e).__name__
-            }
-        )
-        raise
+            # Log error to MLflow run
+            mlflow.log_param("success", False)
+            mlflow.log_param("error", str(e))
+            mlflow.log_param("error_type", type(e).__name__)
+            raise
 
 
 def main():
@@ -463,20 +504,23 @@ Example usage:
 
     # Enable debug logging
     uv run python agent.py --debug
-        """
+        """,
     )
 
     parser.add_argument(
         "--session-id",
         type=str,
         default=None,
-        help="Session ID for conversation persistence (default: auto-generated UUID)"
+        help=(
+            "Session ID for conversation persistence "
+            "(default: auto-generated UUID)"
+        ),
     )
 
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Enable debug logging"
+        help="Enable debug logging",
     )
 
     args = parser.parse_args()
@@ -524,7 +568,7 @@ Example usage:
             try:
                 result = run_agent_with_session(
                     user_message=user_input,
-                    session_id=session_id
+                    session_id=session_id,
                 )
 
                 # Display the agent's response
@@ -537,7 +581,9 @@ Example usage:
                 )
 
             except Exception as e:
-                logger.error(f"Error during agent invocation: {e}", exc_info=True)
+                logger.error(
+                    f"Error during agent invocation: {e}", exc_info=True
+                )
                 print(f"\nError: An error occurred - {str(e)}")
                 print("Please try again or type 'exit' to quit.")
 
@@ -549,24 +595,3 @@ Example usage:
 
 if __name__ == "__main__":
     main()
-
-
-
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
