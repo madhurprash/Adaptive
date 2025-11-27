@@ -36,3 +36,6 @@ htmlcov/
 # Logs
 logs/
 *.log
+
+# Project notes
+.scratchpad.md

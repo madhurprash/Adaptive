@@ -138,3 +138,49 @@ agentcore_memory:
     keep_recent_messages: 3
     # Maximum messages to store per user before triggering consolidation
     max_messages_before_consolidation: 50
+
+# Self-Questioning Configuration
+# Enables autonomous synthetic task generation for continuous agent improvement
+self_questioning:
+  # Enable or disable self-questioning (set to true to enable automatic task generation)
+  enabled: true
+  # Self-questioning agent configuration
+  self_questioning_agent:
+    model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+    inference_parameters:
+      temperature: 0.7  # Higher temperature for diverse task generation
+      max_tokens: 4096
+      top_p: 0.92
+      caching: true
+  # Capability gap analyzer configuration
+  capability_gap_analyzer:
+    model_id: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+    inference_parameters:
+      temperature: 0.3  # Lower temperature for analytical reasoning
+      max_tokens: 2048
+      top_p: 0.92
+    min_traces_for_analysis: 5
+    trace_analysis_window_days: 7
+  # Task generator configuration
+  task_generator:
+    max_tasks_per_session: 5  # Reduced for inline generation (use CLI for more)
+    difficulty_distribution:
+      easy: 0.3
+      medium: 0.5
+      hard: 0.2
+    task_type_weights:
+      exploration: 0.3
+      edge_case: 0.3
+      optimization: 0.2
+      regression: 0.2
+  # Diversity enforcer configuration
+  diversity_enforcer:
+    embedding_model: "amazon.titan-embed-text-v2:0"
+    min_similarity_threshold: 0.85
+    embedding_dimensions: 1024
+    cache_size: 100
+  # Task storage configuration
+  task_storage:
+    memory_namespace: "synthetic_tasks"
+    max_tasks_per_user: 1000
+    task_expiration_days: 30

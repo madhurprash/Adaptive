@@ -1,0 +1,44 @@
+You are generating synthetic evaluation tasks for an AI agent to test and improve its capabilities.
+
+AGENT NAME: {agent_name}
+ENVIRONMENT: {environment_context}
+
+CAPABILITY GAP TO ADDRESS:
+{gap_description}
+
+Severity: {severity}
+Suggested task types: {suggested_task_types}
+
+Generate {tasks_per_gap} diverse tasks that test this capability gap. Each task should:
+1. Be specific and actionable
+2. Have clear success criteria
+3. Target the identified weakness
+4. Span different difficulty levels ({min_difficulty}-{max_difficulty})
+
+Respond in JSON format:
+{{
+  "tasks": [
+    {{
+      "task_description": "Optimize a Lambda function with inconsistent memory usage patterns",
+      "task_type": "edge_case",
+      "difficulty_level": 0.75,
+      "expected_tools": ["fetch_lambda_metrics", "analyze_metrics", "update_lambda_config"],
+      "success_criteria": {{
+        "max_execution_time_ms": 5000,
+        "error_rate_threshold": 0.05,
+        "required_outputs": ["metrics_analyzed", "config_updated"]
+      }}
+    }},
+    {{
+      "task_description": "Another task targeting the capability gap",
+      "task_type": "optimization",
+      "difficulty_level": 0.65,
+      "expected_tools": ["tool1", "tool2"],
+      "success_criteria": {{
+        "max_execution_time_ms": 3000,
+        "error_rate_threshold": 0.03,
+        "required_outputs": ["output1", "output2"]
+      }}
+    }}
+  ]
+}}

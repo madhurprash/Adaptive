@@ -864,6 +864,122 @@ async def get_insights(
 
     return state
 
+
+async def generate_synthetic_tasks(state: UnifiedAgentState) -> UnifiedAgentState:
+    """
+    Generate synthetic tasks from execution history using self-questioning.
+
+    This node runs after insights are generated to create targeted test cases
+    that help identify capability gaps and untested areas.
+    """
+    print("\n🧪 [SELF-QUESTIONING] Starting synthetic task generation...")
+    logger.info("Generating synthetic tasks from execution history...")
+
+    try:
+        # Import self-questioning components
+        from evolution.self_questioning.self_questioning import (
+            CapabilityGapAnalyzer,
+            TaskGenerator,
+            DiversityEnforcer,
+            TaskStore,
+            ExecutionHistory,
+        )
+
+        # Get configuration
+        sq_config = config_data.get('self_questioning', {})
+        if not sq_config.get('enabled', False):
+            logger.info("Self-questioning is disabled in configuration. Skipping task generation.")
+            print("⏭️  [SELF-QUESTIONING] Disabled in configuration - skipping")
+            return state
+
+        # Get insights and platform from state
+        insights = state.get("insights", "")
+        platform = state.get("platform")
+        user_id = state.get("user_id", "default_user")
+
+        if not insights:
+            logger.info("No insights available for task generation. Skipping.")
+            print("⚠️  [SELF-QUESTIONING] No insights available - skipping")
+            return state
+
+        print(f"📊 [SELF-QUESTIONING] Analyzing insights for {platform}...")
+
+        # Initialize components
+        analyzer_config = sq_config.get('capability_gap_analyzer', {})
+        gap_analyzer = CapabilityGapAnalyzer(
+            model_id=analyzer_config.get('model_id', 'us.anthropic.claude-3-5-sonnet-20240620-v1:0'),
+            temperature=analyzer_config.get('inference_parameters', {}).get('temperature', 0.3),
+        )
+
+        generator_config = sq_config.get('self_questioning_agent', {})
+        task_gen_config = sq_config.get('task_generator', {})
+        task_generator = TaskGenerator(
+            model_id=generator_config.get('model_id', 'us.anthropic.claude-sonnet-4-20250514-v1:0'),
+            temperature=generator_config.get('inference_parameters', {}).get('temperature', 0.7),
+            max_tasks=task_gen_config.get('max_tasks_per_session', 5),  # Reduced for inline generation
+        )
+
+        diversity_config = sq_config.get('diversity_enforcer', {})
+        diversity_enforcer = DiversityEnforcer(
+            embedding_model=diversity_config.get('embedding_model', 'amazon.titan-embed-text-v2:0'),
+            similarity_threshold=diversity_config.get('min_similarity_threshold', 0.85),
+        )
+
+        storage_config = sq_config.get('task_storage', {})
+        task_store = TaskStore(
+            memory_namespace=storage_config.get('memory_namespace', 'synthetic_tasks'),
+        )
+
+        # Create execution history from insights
+        execution_history = ExecutionHistory(
+            traces=[{"insights": insights, "platform": platform}],
+            platform=platform or "unknown",
+        )
+
+        # Step 1: Analyze capability gaps
+        print("🔍 [SELF-QUESTIONING] Analyzing capability gaps...")
+        capability_gaps = gap_analyzer.analyze(execution_history)
+        logger.info(f"Identified {len(capability_gaps)} capability gaps")
+
+        if not capability_gaps:
+            print("✓ [SELF-QUESTIONING] No capability gaps found")
+            return state
+
+        # Step 2: Generate tasks
+        print(f"🎯 [SELF-QUESTIONING] Generating targeted tasks...")
+        generated_tasks = task_generator.generate(
+            capability_gaps=capability_gaps,
+            untested_areas=[],  # No codebase exploration in inline mode
+        )
+        logger.info(f"Generated {len(generated_tasks)} synthetic tasks")
+
+        # Step 3: Enforce diversity
+        diverse_tasks = diversity_enforcer.filter_tasks(generated_tasks)
+        logger.info(f"Retained {len(diverse_tasks)} diverse tasks after filtering")
+
+        # Step 4: Store tasks
+        if diverse_tasks:
+            stored_count = task_store.store_tasks(diverse_tasks)
+            print(f"✅ [SELF-QUESTIONING] Generated {stored_count} synthetic tasks")
+            logger.info(f"Stored {stored_count} tasks in AgentCore Memory")
+
+            # Add summary to messages
+            task_summary = f"\n\n💡 **Self-Questioning**: Generated {stored_count} synthetic tasks to test capability gaps."
+            if state.get("messages"):
+                last_message = state["messages"][-1]
+                if isinstance(last_message, AIMessage):
+                    last_message.content += task_summary
+        else:
+            print("⚠️  [SELF-QUESTIONING] No diverse tasks generated")
+
+    except Exception as e:
+        logger.exception(f"Error in self-questioning: {e}")
+        print(f"❌ [SELF-QUESTIONING] Error: {e}")
+        # Don't fail the whole workflow on self-questioning errors
+
+    return state
+
+
 async def evolution_engine(state: UnifiedAgentState) -> UnifiedAgentState:
     """
     Enhanced evolution engine that displays patches before applying changes.
@@ -1260,17 +1376,19 @@ def _build_graph() -> StateGraph:
     workflow.add_node("select_platform", select_platform)
     workflow.add_node("select_agent_repository", select_agent_repository)
     workflow.add_node("get_insights", get_insights)
+    workflow.add_node("generate_synthetic_tasks", generate_synthetic_tasks)
     workflow.add_node("adapt_prompts", evolution_engine)
 
     # Define edges - platform selection happens first
     workflow.add_edge(START, "select_platform")
     workflow.add_edge("select_platform", "get_insights")
-    
-    # REMOVED: workflow.add_edge("get_insights", "select_agent_repository")
-    
-    # Conditional routing from get_insights
+
+    # After insights, run self-questioning to generate synthetic tasks
+    workflow.add_edge("get_insights", "generate_synthetic_tasks")
+
+    # Conditional routing from self-questioning
     workflow.add_conditional_edges(
-        "get_insights",
+        "generate_synthetic_tasks",
         route_to_evolution,
         {
             "adapt_prompts": "select_agent_repository",  # Route to repo selection first
