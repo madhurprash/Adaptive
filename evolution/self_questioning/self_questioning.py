@@ -65,28 +65,27 @@ The insights agent current does the following:
 """
 
 # import libraries
+import os
 import json
 import uuid
 import logging
 import numpy as np
+# import the constants from constants.py file
+from constants import *
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
-from langchain.agents import create_agent
 from typing import List, Dict, Any, Optional
 from langchain_aws import ChatBedrockConverse
-from langchain_core.messages import HumanMessage
-# these are the file system tools that the self questioning
-# agent will have access to to analyze the current repository and then
-# generate high quality synthetic data that can then be used to analyze where
-# the agent is going wrong and where it can go wrong, and how to fix it
-from agent_tools.file_tools import (
-            read_file,
-            write_file,
-            list_directory,
-            search_files
-        )
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.prebuilt import create_react_agent
 # Import config and prompt loading utilities
 from utils import load_config, load_system_prompt
+# Import file system tools for exploration agent
+from agent_tools.file_tools import (
+    read_file,
+    list_directory,
+    search_files
+)
 
 # set a logger
 logger = logging.getLogger(__name__)
@@ -155,7 +154,7 @@ class CapabilityGap(BaseModel):
     Identified weakness in the agent architecture capabilities.
     
     This represents an area where the agent struggles or lacks coverage, used to target
-    task generation
+    task generation. This is extracted from the insights agent.
     """
     gap_id: str
     gap_description: str
@@ -220,16 +219,10 @@ class SelfQuestioningModule:
 
         # Load prompt templates from the self_questioning module directory
         logger.info("Loading prompt templates...")
-        prompt_base_path = "evolution/self_questioning/prompt_templates"
-        self.gap_analysis_prompt_template = load_system_prompt(
-            f"{prompt_base_path}/capability_gap_analysis_prompt.txt"
-        )
-        self.task_generation_prompt_template = load_system_prompt(
-            f"{prompt_base_path}/task_generation_prompt.txt"
-        )
-        self.exploration_prompt_template = load_system_prompt(
-            f"{prompt_base_path}/exploration_prompt.txt"
-        )
+        self.gap_analysis_prompt_template = load_system_prompt(GAP_GENERATOR_PROMPT_FPATH)
+        self.task_generation_prompt_template = load_system_prompt(TASK_GENERATOR_PROMPT_FPATH)
+        self.exploration_prompt_template = load_system_prompt(EXPLORATION_PROMPT_FPATH)
+        print(f"Loaded the gaps, task and exploration generator prompt templates...")
 
         # Set parameters from main config
         self.diversity_threshold = diversity_config.get('min_similarity_threshold', 0.85)
@@ -244,10 +237,8 @@ class SelfQuestioningModule:
         self.num_exploration_tasks = 3
         self.default_agent_codebase_path = "agents_tested/"
 
-        # Initialize file system tools for exploration agent
-        self.file_tools = self._create_file_tools()
-
-        # Create exploration agent with file system access
+        # Create exploration agent with file system tools
+        self.file_tools = [read_file, list_directory, search_files]
         self.exploration_agent = self._create_exploration_agent()
 
         # Store task embeddings for diversity checking
@@ -263,46 +254,28 @@ class SelfQuestioningModule:
             f"   - File tools: {len(self.file_tools)}\n"
         )
 
-    def _create_file_tools(self) -> List:
-        """
-        Create file system tools for codebase exploration.
-
-        Returns:
-            List of file operation tools
-        """
-        try:
-            logger.info("Creating file system tools for task generation agent...")
-            file_tools = [read_file, write_file, list_directory, search_files]
-            logger.info(
-                f"Created {len(file_tools)} file system tools: "
-                f"{', '.join([tool.name for tool in file_tools])}"
-            )
-            return file_tools
-        except Exception as e:
-            logger.error(f"An error occurred while instantiating the file system tools: {e}")
-            raise
-
     def _create_exploration_agent(self):
         """
-        Create an exploration agent for analyzing codebases and generating exploration tasks.
+        Create a ReAct agent with file system tools for codebase exploration.
 
-        This agent uses file system tools to explore codebases and identify
-        unexplored areas that need testing.
+        This agent can:
+        - List directories to understand project structure
+        - Read files to analyze code content
+        - Search for specific patterns in the codebase
 
         Returns:
-            Configured exploration agent with file system tools
+            Compiled LangGraph agent with file system access
         """
-        # Use the exploration prompt template as the system prompt
-        # Note: We'll format it with actual values when invoking the agent
-        system_prompt = self.exploration_prompt_template
-        logger.info("Building exploration agent with file system tools...")
-        agent = create_agent(
+        logger.info("Creating exploration agent with file system tools...")
+
+        # Create ReAct agent with file tools
+        exploration_agent = create_react_agent(
             model=self.llm,
             tools=self.file_tools,
-            system_prompt=system_prompt,
         )
+
         logger.info("✅ Exploration agent created successfully")
-        return agent
+        return exploration_agent
 
     async def generate_tasks(
         self,
@@ -330,12 +303,10 @@ class SelfQuestioningModule:
             max_tasks = self.tasks_per_gap * 10
 
         generated_tasks: List[SyntheticTask] = []
-
         try:
             logger.info("Step 1: Analyzing capability gaps...")
             capability_gaps = self._analyze_capability_gaps(agent_execution_history)
             logger.info(f"Identified {len(capability_gaps)} capability gaps")
-
             logger.info("Step 2: Generating tasks for capability gaps...")
             for gap in capability_gaps:
                 gap_tasks = self._generate_tasks_for_gap(gap)
@@ -354,29 +325,23 @@ class SelfQuestioningModule:
                 logger.info("Step 3: Generating exploration tasks...")
                 codebase_path = environment_context.get('codebase_path', self.default_agent_codebase_path)
                 exploration_tasks = self._generate_exploration_tasks(codebase_path)
-
                 for task in exploration_tasks:
                     if self._ensure_task_diversity(task):
                         generated_tasks.append(task)
                         logger.debug(f"Added exploration task: {task.task_id}")
-
                         if len(generated_tasks) >= max_tasks:
                             break
-
             logger.info("Step 4: Storing generated tasks...")
             for task in generated_tasks:
                 task_id = self._store_task_in_memory(task)
                 logger.debug(f"Stored task {task_id} in memory")
-
             logger.info(
                 f"✅ Task generation complete: {len(generated_tasks)} tasks generated\n"
                 f"   - Task types: {self._count_task_types(generated_tasks)}\n"
                 f"   - Difficulty range: [{self._min_difficulty(generated_tasks):.2f}, "
                 f"{self._max_difficulty(generated_tasks):.2f}]"
             )
-
             return generated_tasks
-
         except Exception as e:
             logger.error(f"Error during task generation: {e}", exc_info=True)
             raise
@@ -652,25 +617,48 @@ class SelfQuestioningModule:
         self,
         agent_codebase_path: str
     ) -> List[SyntheticTask]:
-        """Use exploration agent to analyze codebase and generate tasks."""
+        """
+        Use exploration agent with file tools to analyze codebase and generate tasks.
+
+        The agent uses file system tools (list_directory, read_file, search_files)
+        to explore the codebase and generate targeted exploration tasks.
+
+        Args:
+            agent_codebase_path: Path to the agent codebase directory
+
+        Returns:
+            List of exploration tasks based on codebase analysis
+        """
         logger.info(f"Generating exploration tasks for codebase: {agent_codebase_path}")
 
         tasks: List[SyntheticTask] = []
 
         try:
-            exploration_query = (
-                f"Analyze the codebase at {agent_codebase_path} and identify "
-                f"{self.num_exploration_tasks} areas that need testing. "
-                f"For each area, suggest a specific test scenario or edge case. "
-                f"Focus on: untested code paths, complex logic, error handling, "
-                f"and boundary conditions."
+            # Format the exploration prompt template with actual values
+            agent_name = os.path.basename(agent_codebase_path)
+
+            exploration_query = self.exploration_prompt_template.format(
+                agent_name=agent_name,
+                agent_codebase_path=agent_codebase_path,
+                min_difficulty=self.min_difficulty,
+                max_difficulty=self.max_difficulty
             )
 
-            logger.debug("Invoking exploration agent...")
-            result = self.exploration_agent.invoke({"input": exploration_query})
+            logger.debug("Invoking exploration agent with file tools...")
 
-            exploration_findings = result.get("output", "")
-            tasks = self._parse_exploration_findings(exploration_findings)
+            # Invoke the ReAct agent with the formatted exploration query
+            result = self.exploration_agent.invoke({
+                "messages": [HumanMessage(content=exploration_query)]
+            })
+
+            # Extract the final response from the agent
+            final_message = result["messages"][-1]
+            exploration_response = final_message.content if hasattr(final_message, 'content') else str(final_message)
+
+            logger.debug(f"Exploration agent response length: {len(exploration_response)} characters")
+
+            # Parse the exploration response into tasks
+            tasks = self._parse_exploration_response(exploration_response)
 
             logger.info(f"Generated {len(tasks)} exploration tasks")
 
@@ -679,34 +667,85 @@ class SelfQuestioningModule:
 
         return tasks
 
-    def _parse_exploration_findings(
+    def _parse_exploration_response(
         self,
-        findings: str
+        llm_response: str
     ) -> List[SyntheticTask]:
-        """Parse exploration agent findings into SyntheticTask objects."""
+        """
+        Parse exploration agent response into SyntheticTask objects.
+
+        Expected format is JSON with tasks array (from exploration_prompt.txt).
+
+        Args:
+            llm_response: Raw response from exploration agent
+
+        Returns:
+            List of parsed SyntheticTask objects
+        """
         tasks: List[SyntheticTask] = []
-        lines = [l.strip() for l in findings.split("\n") if l.strip()]
 
-        for line in lines:
-            if len(line) < 20 or line.endswith(":"):
-                continue
+        try:
+            # Try JSON parsing first (expected format from prompt)
+            if "{" in llm_response:
+                # Extract JSON from response (it might be wrapped in explanation text)
+                json_start = llm_response.find("{")
+                json_end = llm_response.rfind("}") + 1
+                json_str = llm_response[json_start:json_end]
 
-            task = SyntheticTask(
-                task_id=str(uuid.uuid4()),
-                task_description=line.lstrip("0123456789.-• "),
-                task_type="exploration",
-                difficulty_level=(self.min_difficulty + self.max_difficulty) / 2,
-                expected_tools=[],
-                success_criteria={"exploration_based": True},
-                generation_metadata={
-                    "source": "exploration_agent",
-                    "generation_time": datetime.now(timezone.utc).isoformat()
-                }
-            )
-            tasks.append(task)
+                data = json.loads(json_str)
+                task_list = data.get("tasks", [])
 
-            if len(tasks) >= self.num_exploration_tasks:
-                break
+                for task_data in task_list:
+                    task = SyntheticTask(
+                        task_id=str(uuid.uuid4()),
+                        task_description=task_data.get("task_description", ""),
+                        task_type="exploration",
+                        difficulty_level=float(task_data.get("difficulty_level", 0.5)),
+                        expected_tools=task_data.get("expected_tools", []),
+                        success_criteria=task_data.get("success_criteria", {}),
+                        generation_metadata={
+                            "source": "exploration_agent",
+                            "generation_time": datetime.now(timezone.utc).isoformat(),
+                            "rationale": task_data.get("rationale", "")
+                        }
+                    )
+                    tasks.append(task)
+
+                    if len(tasks) >= self.num_exploration_tasks:
+                        break
+
+                logger.info(f"Parsed {len(tasks)} exploration tasks from JSON response")
+            else:
+                # Fallback: parse as text if JSON parsing fails
+                logger.warning("Exploration response not in JSON format, using text parser")
+                lines = [l.strip() for l in llm_response.split("\n") if l.strip()]
+
+                for line in lines:
+                    # Skip headers, short lines, and lines ending with colon
+                    if len(line) < 20 or line.endswith(":") or line.startswith("#"):
+                        continue
+
+                    task = SyntheticTask(
+                        task_id=str(uuid.uuid4()),
+                        task_description=line.lstrip("0123456789.-• "),
+                        task_type="exploration",
+                        difficulty_level=(self.min_difficulty + self.max_difficulty) / 2,
+                        expected_tools=[],
+                        success_criteria={"exploration_based": True},
+                        generation_metadata={
+                            "source": "exploration_text_fallback",
+                            "generation_time": datetime.now(timezone.utc).isoformat()
+                        }
+                    )
+                    tasks.append(task)
+
+                    if len(tasks) >= self.num_exploration_tasks:
+                        break
+
+                logger.info(f"Parsed {len(tasks)} tasks using text fallback")
+
+        except Exception as e:
+            logger.error(f"Error parsing exploration response: {e}", exc_info=True)
 
         return tasks
 
@@ -727,12 +766,9 @@ class SelfQuestioningModule:
                         f"threshold {self.diversity_threshold}"
                     )
                     return False
-
             self.task_embeddings_store.append(task_embedding)
             new_task.embedding = task_embedding
-
             return True
-
         except Exception as e:
             logger.error(f"Error checking task diversity: {e}")
             return True

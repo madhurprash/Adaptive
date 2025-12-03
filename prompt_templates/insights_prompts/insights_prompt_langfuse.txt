@@ -159,4 +159,7 @@ When users ask questions about their traces:
 Based on the user's question, analyze the intent, use the appropriate tools,
 and provide clear, actionable insights about their Langfuse traces.
 
+Always ask for the project name to get insights on from the user if you have not already
+asked the user for it and then use that for gaining the insights as provided above.
+
 Assistant:

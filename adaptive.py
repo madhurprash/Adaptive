@@ -423,6 +423,7 @@ class UnifiedAgentState(TypedDict):
     orchestrator_decision: str  # Routing decision: DIRECT, INSIGHTS, EVOLUTION, GENERATE_TASKS
     orchestrator_response: str  # Direct response from orchestrator (for simple queries)
     orchestrator_reasoning: str  # Reasoning for routing decision
+    generated_tasks: List[Dict[str, Any]]  # Synthetic tasks from self-questioning module
 
 async def orchestrator_node(
     state: UnifiedAgentState
@@ -1011,7 +1012,7 @@ async def generate_synthetic_tasks(state: UnifiedAgentState) -> UnifiedAgentStat
             {
                 "insights": insights,
                 "platform": platform,
-            "success": False,  # Assume failures since we're generating improvement tasks
+                "success": False,  # Assume failures since we're generating improvement tasks
                 "task": "Agent execution analysis",
             }
         ]
@@ -1035,6 +1036,46 @@ async def generate_synthetic_tasks(state: UnifiedAgentState) -> UnifiedAgentStat
         if generated_tasks:
             print(f"✅ [SELF-QUESTIONING] Generated {len(generated_tasks)} synthetic tasks")
 
+            # Store tasks in state for potential evolution or evaluation
+            state["generated_tasks"] = [task.model_dump() for task in generated_tasks]
+            logger.info(f"Stored {len(generated_tasks)} tasks in state")
+
+            # Write tasks to synthetic_tasks folder
+            try:
+                from pathlib import Path
+                from datetime import datetime
+
+                # Create synthetic_tasks directory if it doesn't exist
+                tasks_dir = Path("synthetic_tasks")
+                tasks_dir.mkdir(exist_ok=True)
+
+                # Generate filename with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                platform_name = platform or "unknown"
+                task_file = tasks_dir / f"tasks_{platform_name}_{timestamp}.json"
+
+                # Write tasks to file
+                with open(task_file, 'w') as f:
+                    json.dump(
+                        {
+                            "platform": platform,
+                            "user_id": user_id,
+                            "generation_timestamp": timestamp,
+                            "num_tasks": len(generated_tasks),
+                            "tasks": [task.model_dump() for task in generated_tasks]
+                        },
+                        f,
+                        indent=2,
+                        default=str
+                    )
+
+                print(f"📝 [SELF-QUESTIONING] Tasks saved to: {task_file}")
+                logger.info(f"Saved {len(generated_tasks)} tasks to {task_file}")
+
+            except Exception as write_error:
+                logger.error(f"Failed to write tasks to file: {write_error}", exc_info=True)
+                print(f"⚠️  [SELF-QUESTIONING] Could not save tasks to file: {write_error}")
+
             # Add summary to messages
             task_summary = f"\n\n💡 **Self-Questioning**: Generated {len(generated_tasks)} synthetic tasks to test capability gaps."
             if state.get("messages"):
@@ -1043,6 +1084,7 @@ async def generate_synthetic_tasks(state: UnifiedAgentState) -> UnifiedAgentStat
                     last_message.content += task_summary
         else:
             print("⚠️  [SELF-QUESTIONING] No tasks generated")
+            state["generated_tasks"] = []
 
     except Exception as e:
         logger.exception(f"Error in self-questioning: {e}")
@@ -1055,6 +1097,9 @@ async def generate_synthetic_tasks(state: UnifiedAgentState) -> UnifiedAgentStat
 async def evolution_engine(state: UnifiedAgentState) -> UnifiedAgentState:
     """
     Enhanced evolution engine that displays patches before applying changes.
+
+    PREREQUISITE: This function requires insights to be available in the state.
+    If insights are not available, the user should run insights gathering first.
     """
     print("\n🧬 [EVOLUTION NODE] Starting prompt evolution analysis...")
     logger.info("In the EVOLUTION NODE - Analyzing insights for prompt optimization...")
@@ -1062,12 +1107,34 @@ async def evolution_engine(state: UnifiedAgentState) -> UnifiedAgentState:
     # Use the correct key from your state
     question = state.get("user_question", "")
     insights = state.get("insights", "")
-    observability_platform = state.get("observability_platform", "")
+    observability_platform = state.get("platform", "")  # Fixed: use "platform" not "observability_platform"
     agent_repo = state.get("agent_repo", "")
 
     print(f"📋 [EVOLUTION] Question: {question}")
     print(f"💡 [EVOLUTION] Insights available: {len(insights)} characters")
     print(f"🔍 [EVOLUTION] Platform: {observability_platform}")
+
+    # PREREQUISITE CHECK: Ensure insights are available
+    if not insights or len(insights.strip()) == 0:
+        error_msg = (
+            "\n❌ [EVOLUTION] ERROR: Insights are required before optimization!\n"
+            "\n📋 To optimize your agent prompts, you must first gather insights:\n"
+            "   1. Run insights analysis first (e.g., 'What errors occurred?')\n"
+            "   2. Then request optimization (e.g., 'Now optimize my prompts')\n"
+            "\nAlternatively, ask: 'Analyze my agent and then optimize the prompts'\n"
+        )
+        print(error_msg)
+        logger.error("Evolution attempted without insights - prerequisite not met")
+        state["evolution_status"] = "error"
+        state["error"] = "Insights are required before running optimization. Please gather insights first."
+
+        # Update messages to inform user
+        state["messages"] = [
+            HumanMessage(content=question),
+            AIMessage(content=error_msg)
+        ]
+
+        return state
 
     if insights:
         logger.info(f"Received insights of length: {len(insights)}")
@@ -1094,7 +1161,6 @@ Insights from Analysis:
 
 Repository Path: {agent_repo}
 """
-
         logger.info("Invoking optimization agent for evolution...")
         print("🤖 [EVOLUTION] Invoking optimization agent (this may take a while)...")
 
@@ -1420,6 +1486,44 @@ def route_from_orchestrator(
         return END
 
 
+def route_after_insights(
+    state: UnifiedAgentState
+) -> str:
+    """
+    Routing function after insights generation.
+
+    Decides whether to automatically trigger self-questioning based on config.
+
+    Args:
+        state: UnifiedAgentState containing insights
+
+    Returns:
+        "generate_synthetic_tasks" if auto-trigger enabled, otherwise END
+    """
+    sq_config = config_data.get('self_questioning', {})
+
+    # Check if self-questioning is enabled
+    if not sq_config.get('enabled', False):
+        logger.info("Self-questioning disabled in config, skipping")
+        return END
+
+    # Check if auto-trigger is enabled
+    auto_trigger = sq_config.get('auto_trigger_after_insights', False)
+    if not auto_trigger:
+        logger.info("Auto-trigger disabled in config, skipping")
+        return END
+
+    # Check if insights were generated
+    insights = state.get("insights", "")
+    if not insights or "error" in insights.lower()[:100]:
+        logger.info("No valid insights generated, skipping self-questioning")
+        return END
+
+    logger.info("Auto-triggering self-questioning after insights")
+    print("\n🔄 [AUTO-TRIGGER] Self-questioning will run automatically...")
+    return "generate_synthetic_tasks"
+
+
 def route_after_tasks(
     state: UnifiedAgentState  # noqa: ARG001
 ) -> str:
@@ -1466,8 +1570,15 @@ def _build_graph() -> StateGraph:
         }
     )
 
-    # After insights, end (insights is complete)
-    workflow.add_edge("get_insights", END)
+    # After insights, conditionally route to self-questioning or END
+    workflow.add_conditional_edges(
+        "get_insights",
+        route_after_insights,
+        {
+            "generate_synthetic_tasks": "generate_synthetic_tasks",  # Auto-trigger if enabled
+            END: END  # Skip if disabled or no insights
+        }
+    )
 
     # After repo selection, go to evolution
     workflow.add_edge("select_agent_repository", "adapt_prompts")
@@ -1513,6 +1624,10 @@ async def run_agent(
         "research_results": "",
         "output_file_path": "",
         "messages": [],
+        "orchestrator_decision": "",
+        "orchestrator_response": "",
+        "orchestrator_reasoning": "",
+        "generated_tasks": [],  # Initialize empty list for synthetic tasks
     }
 
     # Configure thread for memory persistence
@@ -1717,11 +1832,16 @@ def _run_interactive_session(
                 # Display results
                 print("\n" + "="*80)
 
-                # Check if this was a direct response from orchestrator
-                orchestrator_response = result.get('orchestrator_response')
-                if orchestrator_response:
-                    print(orchestrator_response)
+                # Check orchestrator decision to determine what to display
+                orchestrator_decision = result.get('orchestrator_decision', '')
+
+                # Only show orchestrator_response if decision was DIRECT
+                if orchestrator_decision == 'DIRECT':
+                    orchestrator_response = result.get('orchestrator_response', '')
+                    if orchestrator_response:
+                        print(orchestrator_response)
                 else:
+                    # For INSIGHTS, EVOLUTION, GENERATE_TASKS - show the agent outputs
                     # Show insights if available
                     if result.get('insights'):
                         print(result['insights'])

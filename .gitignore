@@ -39,3 +39,6 @@ logs/
 
 # Project notes
 .scratchpad.md
+
+# Generated synthetic tasks
+synthetic_tasks/

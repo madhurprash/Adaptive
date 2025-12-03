@@ -142,6 +142,8 @@ agentcore_memory:
 self_questioning:
   # Enable or disable self-questioning (set to true to enable automatic task generation)
   enabled: true
+  # Auto-trigger after insights generation (runs automatically if enabled)
+  auto_trigger_after_insights: true
   # Self-questioning agent configuration
   self_questioning_agent:
     model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
