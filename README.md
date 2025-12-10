@@ -1,5 +1,7 @@
 # Adaptive
 
+### ⚠️ THIS IS A WORK IN PROGRESS REPO ⚠️
+
 Continuous optimization for AI agents through intelligent observability and automated code evolution.
 
 ## Installation
