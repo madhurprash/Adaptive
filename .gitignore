@@ -36,3 +36,9 @@ htmlcov/
 # Logs
 logs/
 *.log
+
+# Project notes
+.scratchpad.md
+
+# Generated synthetic tasks
+synthetic_tasks/

@@ -1,3 +1,5 @@
+import os
+
 # these are the constants that will be used across the
 # agent file
 CONFIG_FILE_FPATH: str = "configs/config.yaml"
@@ -79,3 +81,19 @@ CLAUDE_4_5_SONNET_HINT: str = "sonnet-4-5"
 # These are the user intent constants
 TO_EVOLUTION_HINT: str = "ADAPT"
 CONTINUE_WITH_INSIGHTS_HINT: str = "INSIGHTS"
+
+# =============================================================================
+# PROMPTS FOR THE SELF-QUESTIONING MODULE
+# =============================================================================
+
+# These are the prompts for the self-questioning module
+SELF_QUESTIONING_PROMPTS_BASE_FPATH: str = "evolution/self_questioning/prompt_templates"
+# This is the prompt template that analyzes the gaps based on the insights from the observability
+# platforms
+GAP_GENERATOR_PROMPT_FPATH: str = os.path.join(SELF_QUESTIONING_PROMPTS_BASE_FPATH, "capability_gap_analysis_prompt.txt")
+
+# This is the prompt to generate the tasks based on the gaps from the insights. If the gaps are not provided, then use the 
+# sample information from step one to create that synthetic data
+TASK_GENERATOR_PROMPT_FPATH: str = os.path.join(SELF_QUESTIONING_PROMPTS_BASE_FPATH, "task_generation_prompt.txt")
+
+EXPLORATION_PROMPT_FPATH: str = os.path.join(SELF_QUESTIONING_PROMPTS_BASE_FPATH, "exploration_prompt.txt")

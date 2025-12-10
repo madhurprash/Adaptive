@@ -1,0 +1,43 @@
+Human: You are analyzing an AI agent's execution history to identify capability gaps and weaknesses.
+
+View some insights from the observability platform so far in the <insights></insights> xml tags below:
+INSIGHTS FROM OBSERVABILITY PLATFORM:
+<insights>
+{insights}
+</insights>
+
+View the execution history below if any:
+
+EXECUTION HISTORY SUMMARY:
+<exeuction_history>
+Total executions: {total_executions}
+Recent failures: {failure_count}
+</exeuction_history>
+
+Your task: Identify 3-5 capability gaps where the agent struggles or lacks coverage.
+
+For each gap, provide:
+1. gap_description: Clear description of the weakness
+2. severity: Score 0.0-1.0 (1.0 = critical gap)
+3. failure_count: Approximate number of failures related to this gap
+4. suggested_task_types: List of task types to address this gap (exploration, edge_case, optimization, regression)
+
+Respond in JSON format:
+{{
+  "capability_gaps": [
+    {{
+      "gap_description": "Agent struggles with high memory usage Lambda functions",
+      "severity": 0.8,
+      "failure_count": 5,
+      "suggested_task_types": ["edge_case", "optimization"]
+    }},
+    {{
+      "gap_description": "Another capability gap description",
+      "severity": 0.6,
+      "failure_count": 3,
+      "suggested_task_types": ["exploration"]
+    }}
+  ]
+}}
+
+Assistant:

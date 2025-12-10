@@ -1,18 +1,21 @@
 """
-Adaptive - Continuous Optimization for AI Agents
+Adaptive - Orchestrator-Based Self-Healing AI Agent System
 
-This is the agent that is responsible to do the following high value tasks:
+This is an intelligent orchestrator-based multi-agent system that provides:
 
-1. Collect agent traces. A requirement is that any agent that is running or any
-multi-agent system's traces are being logged in LangSmith or another observability
-platform.
-2. Curate logs based on user questions and needs.
-3. Answer user questions about agent execution traces.
+1. Intelligent Routing: Orchestrator agent analyzes user intent and routes to specialized sub-agents
+2. Insights Agent: Analyzes execution traces from observability platforms (LangSmith, Langfuse, MLflow)
+3. Evolution Agent: Optimizes prompts and improves agent code based on performance patterns
+4. Generate Tasks Agent: Creates synthetic test cases for comprehensive capability testing
+5. Direct Responses: Handles simple queries (greetings, clarifications) without sub-agent invocation
+6. Conversation Memory: Uses AgentCore Memory for semantic search and context retrieval
+
+The orchestrator uses Claude Sonnet 4 for intelligent decision-making and can handle
+both complex multi-agent workflows and simple conversational interactions.
 """
 import os
 import sys
 import json
-import yaml
 import uuid
 import logging
 import difflib
@@ -38,7 +41,6 @@ from langgraph.errors import GraphInterrupt
 from typing import Any, Dict, List, Optional
 from langchain_aws import ChatBedrockConverse
 from langgraph.graph.message import add_messages
-from langchain_core.prompts import PromptTemplate
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import (
@@ -74,33 +76,37 @@ logger.info(f"Loaded the configuration file: {json.dumps(config_data, indent=4)}
 # initialize the context engineering information
 context_engineering_info: Dict = config_data['context_engineering_info']
 
-# ---------------- ROUTING CONFIGURATION ----------------
+# ---------------- ORCHESTRATOR CONFIGURATION ----------------
 """
-This section initializes the routing LLM that decides whether to invoke
-the deep research agent based on the user's question and available logs.
+This section initializes the orchestrator agent that decides which sub-agents
+to invoke based on the user's question. The orchestrator can route to:
+1. Insights Agent - for trace analysis
+2. Evolution Agent - for prompt optimization
+3. Generate Tasks Agent - for synthetic task generation
+4. Direct Response - for simple queries (greetings, clarifications)
 """
-routing_config: Dict = config_data.get('routing_configuration', {})
-router_model_id = routing_config.get('router_model_id', 'us.anthropic.claude-3-5-haiku-20241022-v1:0')
-router_inference_params = routing_config.get('inference_parameters', {})
+orchestrator_config: Dict = config_data.get('orchestrator_agent', {})
+orchestrator_model_id = orchestrator_config.get('model_id', 'us.anthropic.claude-sonnet-4-20250514-v1:0')
+orchestrator_inference_params = orchestrator_config.get('inference_parameters', {})
 
-# Initialize routing LLM (small, fast model for routing decisions)
-router_llm = ChatBedrockConverse(
-    model=router_model_id,
-    temperature=router_inference_params.get('temperature', 0.1),
-    max_tokens=router_inference_params.get('max_tokens', 500),
-    top_p=router_inference_params.get('top_p', 0.92),
+# Initialize orchestrator LLM (Sonnet 4 for intelligent routing)
+orchestrator_llm = ChatBedrockConverse(
+    model=orchestrator_model_id,
+    temperature=orchestrator_inference_params.get('temperature', 0.3),
+    max_tokens=orchestrator_inference_params.get('max_tokens', 2048),
+    top_p=orchestrator_inference_params.get('top_p', 0.92),
 )
-logger.info(f"Initialized routing LLM: {router_llm}")
+logger.info(f"Initialized orchestrator LLM: {orchestrator_llm}")
 
-# Load routing prompt
-router_prompt_path = routing_config.get('router_prompt_path', 'prompt_templates/routing_decision_prompt.txt')
-router_prompt_template = ""
+# Load orchestrator prompt
+orchestrator_prompt_path = orchestrator_config.get('prompt_template_path', 'prompt_templates/orchestrator_prompt.txt')
+orchestrator_prompt_template = ""
 try:
-    router_prompt_template = load_system_prompt(router_prompt_path)
-    logger.info(f"Loaded routing prompt from: {router_prompt_path}")
+    orchestrator_prompt_template = load_system_prompt(orchestrator_prompt_path)
+    logger.info(f"Loaded orchestrator prompt from: {orchestrator_prompt_path}")
 except Exception as e:
-    logger.warning(f"Could not load routing prompt: {e}")
-    router_prompt_template = "Determine if deep research is needed. Respond with 'ROUTE_TO_RESEARCH' or 'END'."
+    logger.error(f"Could not load orchestrator prompt: {e}")
+    raise ValueError(f"Orchestrator prompt is required but failed to load: {e}")
 
 # ---------------- INSIGHTS AGENT FACTORY INITIALIZATION ----------------
 """
@@ -395,11 +401,11 @@ logger.info("✅ Prompt Evolution System initialized successfully")
 
 class UnifiedAgentState(TypedDict):
     """
-    Unified state shared by both insights and research agents.
+    Unified state for orchestrator-based multi-agent system.
 
     This state allows:
-    1. Insights agent to populate raw_logs and insights
-    2. Research agent to access both raw_logs and insights for analysis
+    1. Orchestrator to route to appropriate sub-agents
+    2. Sub-agents to populate their results
     3. Conversation memory through messages field
     4. User identification for AgentCore Memory
     5. Platform persistence across conversation turns
@@ -408,16 +414,127 @@ class UnifiedAgentState(TypedDict):
     session_id: Optional[str]
     user_id: str  # User/thread identifier for AgentCore Memory
     platform: Optional[str]  # Selected observability platform (persisted across session)
-    raw_logs: Dict[str, Any]  # Raw logs from LangSmith
+    raw_logs: Dict[str, Any]  # Raw logs from observability platforms
     insights: str  # Insights generated by insights agent
     research_results: str  # Research results from research agent
     output_file_path: str  # Path to output report file
     messages: Annotated[List[BaseMessage], add_messages]
-    # this is the agent repository of the agent code to optimize
-    agent_repo: str
-    # this is the special marker to check whether the step is to skip to evolution if the follow up user
-    # question is about evolving the agent code
-    spec_insights_marker: str
+    agent_repo: str  # Agent repository path for evolution
+    orchestrator_decision: str  # Routing decision: DIRECT, INSIGHTS, EVOLUTION, GENERATE_TASKS
+    orchestrator_response: str  # Direct response from orchestrator (for simple queries)
+    orchestrator_reasoning: str  # Reasoning for routing decision
+    generated_tasks: List[Dict[str, Any]]  # Synthetic tasks from self-questioning module
+
+async def orchestrator_node(
+    state: UnifiedAgentState
+) -> UnifiedAgentState:
+    """
+    Orchestrator node that decides which sub-agent to invoke or responds directly.
+
+    This node:
+    1. Analyzes the user question with conversation history
+    2. Uses AgentCore Memory for context retrieval
+    3. Decides to route to: INSIGHTS, EVOLUTION, GENERATE_TASKS, or DIRECT response
+    4. Stores decision and reasoning in state
+    """
+    print("\n🎯 [ORCHESTRATOR] Analyzing user request...")
+    logger.info("Orchestrator analyzing user request and conversation context")
+
+    user_question = state["user_question"]
+    existing_messages = state.get("messages", [])
+    user_id = state.get("user_id", "default_user")
+
+    try:
+        # STEP 1: Search memory for relevant context
+        print("🧠 [ORCHESTRATOR] Retrieving relevant context from memory...")
+        enriched_messages = _memory_search_hook(
+            messages=list(existing_messages),
+            user_id=user_id,
+        )
+
+        # STEP 2: Prepare orchestrator prompt with system instructions
+        orchestrator_system_message = SystemMessage(content=orchestrator_prompt_template)
+
+        # Add conversation history and current question
+        messages_for_orchestrator = [orchestrator_system_message] + enriched_messages + [
+            HumanMessage(content=f"User Question: {user_question}\n\nAnalyze this question and decide how to respond.")
+        ]
+
+        # STEP 3: Invoke orchestrator LLM
+        print("🤔 [ORCHESTRATOR] Making routing decision...")
+        logger.info(f"Invoking orchestrator with {len(messages_for_orchestrator)} messages")
+
+        response = await orchestrator_llm.ainvoke(messages_for_orchestrator)
+        orchestrator_output = response.content.strip()
+
+        logger.info(f"Orchestrator output: {orchestrator_output}")
+
+        # STEP 4: Parse orchestrator response
+        # Expected format:
+        # ROUTE: [DIRECT|INSIGHTS|EVOLUTION|GENERATE_TASKS]
+        # RESPONSE: [text] (for DIRECT)
+        # or
+        # REASONING: [text] (for agent routing)
+
+        lines = orchestrator_output.split('\n')
+        routing_decision = "DIRECT"  # default
+        response_text = ""
+        reasoning = ""
+
+        for idx, line in enumerate(lines):
+            line_stripped = line.strip()
+            if line_stripped.startswith("ROUTE:"):
+                routing_decision = line_stripped.replace("ROUTE:", "").strip().upper()
+            elif line_stripped.startswith("RESPONSE:"):
+                # Collect rest of the lines as part of response
+                response_text = '\n'.join(lines[idx:]).replace("RESPONSE:", "").strip()
+                break
+            elif line_stripped.startswith("REASONING:"):
+                # Collect rest of the lines as part of reasoning
+                reasoning = '\n'.join(lines[idx:]).replace("REASONING:", "").strip()
+                break
+
+        # Store decision in state
+        state["orchestrator_decision"] = routing_decision
+        state["orchestrator_reasoning"] = reasoning
+
+        if routing_decision == "DIRECT":
+            # Direct response - no sub-agent needed
+            state["orchestrator_response"] = response_text
+            print(f"💬 [ORCHESTRATOR] Decision: Direct response")
+            print(f"   Response: {response_text[:100]}...")
+            logger.info("Orchestrator decided: DIRECT response")
+
+            # Add to messages for memory
+            state["messages"] = [
+                HumanMessage(content=user_question),
+                AIMessage(content=response_text)
+            ]
+
+            # Store in memory
+            _memory_store_hook(
+                user_id=user_id,
+                session_id=state.get("session_id"),
+                user_question=user_question,
+                ai_response=response_text,
+            )
+        else:
+            # Routing to sub-agent
+            print(f"🚀 [ORCHESTRATOR] Decision: Route to {routing_decision}")
+            print(f"   Reasoning: {reasoning}")
+            logger.info(f"Orchestrator decided: Route to {routing_decision}")
+            logger.info(f"Reasoning: {reasoning}")
+
+        return state
+
+    except Exception as e:
+        logger.error(f"Error in orchestrator node: {e}", exc_info=True)
+        print(f"❌ [ORCHESTRATOR] Error: {e}")
+        # Fallback to insights on error
+        state["orchestrator_decision"] = "INSIGHTS"
+        state["orchestrator_reasoning"] = f"Error in orchestrator, defaulting to insights: {e}"
+        return state
+
 
 def select_platform(
     state: UnifiedAgentState
@@ -604,42 +721,7 @@ async def get_insights(
             logger.info(f"Using platform from session: {platform}")
             print(f"✅ [PLATFORM] Using session platform: {platform}")
         
-        # STEP 2: Detect user intent based on their question
-        user_intent_router_prompt: str = load_system_prompt(
-            config_data['routing_configuration']['router_prompts'].get('user_intent_routing')
-        )
-        formatted_user_intent_router_prompt = user_intent_router_prompt.format(
-            user_question=user_question,
-            conversation_history=existing_messages[:3]
-        )
-        
-        logger.info(f"Invoking the user intent router with the following prompt: {formatted_user_intent_router_prompt}")
-        user_intent_response = router_llm.invoke(
-            [HumanMessage(content=formatted_user_intent_router_prompt)]
-        )
-        user_intent = user_intent_response.content.strip().upper()
-        logger.info(f"Got the user intent: {user_intent}")
-        
-        # STEP 3: Check user intent and decide whether to skip insights
-        if TO_EVOLUTION_HINT in user_intent:
-            # User wants evolution directly - skip insights generation
-            logger.info("User intent detected: Evolution requested. Skipping insights generation.")
-            print("🧬 [INTENT ROUTING] Evolution requested - skipping insights analysis")
-            # Set minimal state to indicate we're going straight to evolution
-            state["insights"] = "User requested prompt evolution directly."
-            state["messages"] = [
-                HumanMessage(content=user_question),
-                AIMessage(content="Routing to evolution engine...")
-            ]
-            state["spec_insights_marker"] = TO_EVOLUTION_HINT
-            return state
-        else:
-            state["spec_insights_marker"] = CONTINUE_WITH_INSIGHTS_HINT
-        # If not going to evolution, continue with insights generation
-        logger.info("User intent: Continuing with insights generation")
-        print("💡 [INTENT ROUTING] Continuing with insights analysis")
-        
-        # STEP 3: Create platform-specific insights agent dynamically
+        # STEP 2: Create platform-specific insights agent dynamically
         print(f"🏗️  [AGENT FACTORY] Creating {platform} insights agent...")
         logger.info(f"Creating insights agent for platform: {platform}")
 
@@ -864,9 +946,160 @@ async def get_insights(
 
     return state
 
+
+async def generate_synthetic_tasks(state: UnifiedAgentState) -> UnifiedAgentState:
+    """
+    Generate synthetic tasks from execution history using self-questioning.
+
+    This node runs after insights are generated to create targeted test cases
+    that help identify capability gaps and untested areas.
+    """
+    print("\n🧪 [SELF-QUESTIONING] Starting synthetic task generation...")
+    logger.info("Generating synthetic tasks from execution history...")
+
+    try:
+        # Import self-questioning module
+        from evolution.self_questioning.self_questioning import SelfQuestioningModule
+        from langchain_aws import BedrockEmbeddings
+
+        # Get configuration
+        sq_config = config_data.get('self_questioning', {})
+        if not sq_config.get('enabled', False):
+            logger.info("Self-questioning is disabled in configuration. Skipping task generation.")
+            print("⏭️  [SELF-QUESTIONING] Disabled in configuration - skipping")
+            return state
+
+        # Get insights and platform from state
+        insights = state.get("insights", "")
+        platform = state.get("platform")
+        user_id = state.get("user_id", "default_user")
+
+        if not insights:
+            logger.info("No insights available for task generation. Skipping.")
+            print("⚠️  [SELF-QUESTIONING] No insights available - skipping")
+            return state
+
+        print(f"📊 [SELF-QUESTIONING] Analyzing insights for {platform}...")
+
+        # Initialize LLM for task generation
+        sq_agent_config = sq_config.get('self_questioning_agent', {})
+        sq_llm = ChatBedrockConverse(
+            model=sq_agent_config.get('model_id', 'us.anthropic.claude-sonnet-4-20250514-v1:0'),
+            temperature=sq_agent_config.get('inference_parameters', {}).get('temperature', 0.7),
+            max_tokens=sq_agent_config.get('inference_parameters', {}).get('max_tokens', 4096),
+            top_p=sq_agent_config.get('inference_parameters', {}).get('top_p', 0.92),
+        )
+
+        # Initialize embedding model
+        diversity_config = sq_config.get('diversity_enforcer', {})
+        embedding_model = BedrockEmbeddings(
+            model_id=diversity_config.get('embedding_model', 'us.amazon.titan-embed-text-v2:0')
+        )
+
+        # Initialize self-questioning module
+        logger.info("Initializing SelfQuestioningModule...")
+        sq_module = SelfQuestioningModule(
+            llm=sq_llm,
+            embedding_model=embedding_model,
+            agentcore_memory=memory_store if agentcore_memory_enabled else None,
+            config_dict=sq_config,
+        )
+        logger.info("✅ SelfQuestioningModule initialized")
+
+        # Create execution history from insights
+        # The module expects a list of execution dictionaries
+        execution_history = [
+            {
+                "insights": insights,
+                "platform": platform,
+                "success": False,  # Assume failures since we're generating improvement tasks
+                "task": "Agent execution analysis",
+            }
+        ]
+
+        # Environment context
+        environment_context = {
+            "platform": platform,
+            "user_id": user_id,
+            "codebase_path": sq_module.default_agent_codebase_path,
+        }
+
+        # Generate tasks using the module (async call)
+        print("🎯 [SELF-QUESTIONING] Generating targeted tasks...")
+        generated_tasks = await sq_module.generate_tasks(
+            environment_context=environment_context,
+            agent_execution_history=execution_history,
+            max_tasks=sq_config.get('task_generator', {}).get('max_tasks_per_session', 5),
+        )
+        logger.info(f"Generated {len(generated_tasks)} synthetic tasks")
+
+        if generated_tasks:
+            print(f"✅ [SELF-QUESTIONING] Generated {len(generated_tasks)} synthetic tasks")
+
+            # Store tasks in state for potential evolution or evaluation
+            state["generated_tasks"] = [task.model_dump() for task in generated_tasks]
+            logger.info(f"Stored {len(generated_tasks)} tasks in state")
+
+            # Write tasks to synthetic_tasks folder
+            try:
+                from pathlib import Path
+                from datetime import datetime
+
+                # Create synthetic_tasks directory if it doesn't exist
+                tasks_dir = Path("synthetic_tasks")
+                tasks_dir.mkdir(exist_ok=True)
+
+                # Generate filename with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                platform_name = platform or "unknown"
+                task_file = tasks_dir / f"tasks_{platform_name}_{timestamp}.json"
+
+                # Write tasks to file
+                with open(task_file, 'w') as f:
+                    json.dump(
+                        {
+                            "platform": platform,
+                            "user_id": user_id,
+                            "generation_timestamp": timestamp,
+                            "num_tasks": len(generated_tasks),
+                            "tasks": [task.model_dump() for task in generated_tasks]
+                        },
+                        f,
+                        indent=2,
+                        default=str
+                    )
+
+                print(f"📝 [SELF-QUESTIONING] Tasks saved to: {task_file}")
+                logger.info(f"Saved {len(generated_tasks)} tasks to {task_file}")
+
+            except Exception as write_error:
+                logger.error(f"Failed to write tasks to file: {write_error}", exc_info=True)
+                print(f"⚠️  [SELF-QUESTIONING] Could not save tasks to file: {write_error}")
+
+            # Add summary to messages
+            task_summary = f"\n\n💡 **Self-Questioning**: Generated {len(generated_tasks)} synthetic tasks to test capability gaps."
+            if state.get("messages"):
+                last_message = state["messages"][-1]
+                if isinstance(last_message, AIMessage):
+                    last_message.content += task_summary
+        else:
+            print("⚠️  [SELF-QUESTIONING] No tasks generated")
+            state["generated_tasks"] = []
+
+    except Exception as e:
+        logger.exception(f"Error in self-questioning: {e}")
+        print(f"❌ [SELF-QUESTIONING] Error: {e}")
+        # Don't fail the whole workflow on self-questioning errors
+
+    return state
+
+
 async def evolution_engine(state: UnifiedAgentState) -> UnifiedAgentState:
     """
     Enhanced evolution engine that displays patches before applying changes.
+
+    PREREQUISITE: This function requires insights to be available in the state.
+    If insights are not available, the user should run insights gathering first.
     """
     print("\n🧬 [EVOLUTION NODE] Starting prompt evolution analysis...")
     logger.info("In the EVOLUTION NODE - Analyzing insights for prompt optimization...")
@@ -874,12 +1107,34 @@ async def evolution_engine(state: UnifiedAgentState) -> UnifiedAgentState:
     # Use the correct key from your state
     question = state.get("user_question", "")
     insights = state.get("insights", "")
-    observability_platform = state.get("observability_platform", "")
+    observability_platform = state.get("platform", "")  # Fixed: use "platform" not "observability_platform"
     agent_repo = state.get("agent_repo", "")
 
     print(f"📋 [EVOLUTION] Question: {question}")
     print(f"💡 [EVOLUTION] Insights available: {len(insights)} characters")
     print(f"🔍 [EVOLUTION] Platform: {observability_platform}")
+
+    # PREREQUISITE CHECK: Ensure insights are available
+    if not insights or len(insights.strip()) == 0:
+        error_msg = (
+            "\n❌ [EVOLUTION] ERROR: Insights are required before optimization!\n"
+            "\n📋 To optimize your agent prompts, you must first gather insights:\n"
+            "   1. Run insights analysis first (e.g., 'What errors occurred?')\n"
+            "   2. Then request optimization (e.g., 'Now optimize my prompts')\n"
+            "\nAlternatively, ask: 'Analyze my agent and then optimize the prompts'\n"
+        )
+        print(error_msg)
+        logger.error("Evolution attempted without insights - prerequisite not met")
+        state["evolution_status"] = "error"
+        state["error"] = "Insights are required before running optimization. Please gather insights first."
+
+        # Update messages to inform user
+        state["messages"] = [
+            HumanMessage(content=question),
+            AIMessage(content=error_msg)
+        ]
+
+        return state
 
     if insights:
         logger.info(f"Received insights of length: {len(insights)}")
@@ -906,7 +1161,6 @@ Insights from Analysis:
 
 Repository Path: {agent_repo}
 """
-
         logger.info("Invoking optimization agent for evolution...")
         print("🤖 [EVOLUTION] Invoking optimization agent (this may take a while)...")
 
@@ -1193,96 +1447,149 @@ Repository Path: {agent_repo}
         return state
 
 
-def route_to_evolution(
+def route_from_orchestrator(
     state: UnifiedAgentState
 ) -> str:
     """
-    Routing function that determines whether to invoke the evolution agent.
+    Routing function based on orchestrator decision.
 
-    Uses a small LLM to analyze:
-    1. Whether the insights indicate patterns that could benefit from prompt optimization
-    2. Whether the user is asking for prompt improvements
-    3. Whether there are performance issues that better prompting could address
+    Routes to:
+    - END if decision is DIRECT (orchestrator already responded)
+    - "get_insights" if decision is INSIGHTS (platform already selected)
+    - "select_agent_repository" if decision is EVOLUTION (need repo for code changes)
+    - "generate_synthetic_tasks" if decision is GENERATE_TASKS
 
     Args:
-        state: UnifiedAgentState containing user_question and insights
+        state: UnifiedAgentState containing orchestrator_decision
 
     Returns:
-        "adapt_prompts" to route to evolution agent, or END to skip it
+        Node name to route to, or END
     """
-    print("\n🚦 [ROUTING] Deciding whether to invoke prompt evolution...")
-    user_question = state.get("user_question", "")
-    logger.info(f"Going to check if the user question requires prompt evolution: {user_question}")
+    decision = state.get("orchestrator_decision", "DIRECT")
+    logger.info(f"Routing based on orchestrator decision: {decision}")
 
-    # Prepare the routing prompt
-    routing_prompt = router_prompt_template.format(
-        user_question=user_question
-    )
-
-    try:
-        # Invoke the routing LLM
-        logger.info("Invoking routing LLM to determine if evolution is needed...")
-        print("🤔 [ROUTING] Analyzing user question...")
-        response = router_llm.invoke([HumanMessage(content=routing_prompt)])
-        routing_decision = response.content.strip().upper()
-        logger.info(f"Routing LLM decision: {routing_decision}")
-
-        # Parse the decision - checking for ROUTE_TO_RESEARCH which the prompt should return
-        # for evolution requests (the prompt template may say "research" but we use it for evolution)
-        if "ROUTE_TO_RESEARCH" in routing_decision or "ROUTE_TO_EVOLUTION" in routing_decision:
-            print("➡️  [ROUTING] Decision: Routing to prompt evolution agent")
-            logger.info("Routing to prompt evolution agent")
-            return "adapt_prompts"
-        elif TO_EVOLUTION_HINT in state["spec_insights_marker"]:
-            print("➡️  [ROUTING] Decision: Routing to prompt evolution agent")
-            logger.info("Routing to prompt evolution agent")
-            return "adapt_prompts"
-        else:
-            print("✋ [ROUTING] Decision: Skipping evolution, ending workflow")
-            logger.info("Skipping evolution agent, ending workflow")
-            return END
-    except Exception as e:
-        logger.error(f"Error during routing decision: {e}", exc_info=True)
-        print(f"❌ [ROUTING] Error in routing: {e}, defaulting to END")
-        # Default to ending if there's an error
-        logger.info("Error in routing, defaulting to END")
+    if decision == "DIRECT":
+        # Orchestrator handled it, end workflow
+        return END
+    elif decision == "INSIGHTS":
+        # Platform already selected at start, go directly to insights
+        return "get_insights"
+    elif decision == "EVOLUTION":
+        # Need repo selection first, then evolution
+        return "select_agent_repository"
+    elif decision == "GENERATE_TASKS":
+        # Go directly to task generation
+        return "generate_synthetic_tasks"
+    else:
+        # Unknown decision, default to END
+        logger.warning(f"Unknown orchestrator decision: {decision}, defaulting to END")
         return END
 
 
+def route_after_insights(
+    state: UnifiedAgentState
+) -> str:
+    """
+    Routing function after insights generation.
+
+    Decides whether to automatically trigger self-questioning based on config.
+
+    Args:
+        state: UnifiedAgentState containing insights
+
+    Returns:
+        "generate_synthetic_tasks" if auto-trigger enabled, otherwise END
+    """
+    sq_config = config_data.get('self_questioning', {})
+
+    # Check if self-questioning is enabled
+    if not sq_config.get('enabled', False):
+        logger.info("Self-questioning disabled in config, skipping")
+        return END
+
+    # Check if auto-trigger is enabled
+    auto_trigger = sq_config.get('auto_trigger_after_insights', False)
+    if not auto_trigger:
+        logger.info("Auto-trigger disabled in config, skipping")
+        return END
+
+    # Check if insights were generated
+    insights = state.get("insights", "")
+    if not insights or "error" in insights.lower()[:100]:
+        logger.info("No valid insights generated, skipping self-questioning")
+        return END
+
+    logger.info("Auto-triggering self-questioning after insights")
+    print("\n🔄 [AUTO-TRIGGER] Self-questioning will run automatically...")
+    return "generate_synthetic_tasks"
+
+
+def route_after_tasks(
+    state: UnifiedAgentState  # noqa: ARG001
+) -> str:
+    """
+    Routing function after task generation completes.
+    Always ends the workflow since tasks are the final step.
+
+    Args:
+        state: UnifiedAgentState (unused but required by LangGraph)
+    """
+    return END
+
+
 def _build_graph() -> StateGraph:
-    """Build the unified multi-agent graph with memory checkpointer."""
-    logger.info("Building unified multi-agent graph...")
+    """Build the orchestrator-based multi-agent graph with memory checkpointer."""
+    logger.info("Building orchestrator-based multi-agent graph...")
 
     # Create graph with unified state
     workflow = StateGraph(UnifiedAgentState)
 
     # Add nodes
+    workflow.add_node("orchestrator", orchestrator_node)
     workflow.add_node("select_platform", select_platform)
     workflow.add_node("select_agent_repository", select_agent_repository)
     workflow.add_node("get_insights", get_insights)
+    workflow.add_node("generate_synthetic_tasks", generate_synthetic_tasks)
     workflow.add_node("adapt_prompts", evolution_engine)
 
-    # Define edges - platform selection happens first
+    # Start with platform selection - run this first before anything else
     workflow.add_edge(START, "select_platform")
-    workflow.add_edge("select_platform", "get_insights")
-    
-    # REMOVED: workflow.add_edge("get_insights", "select_agent_repository")
-    
-    # Conditional routing from get_insights
+
+    # After platform selection, go to orchestrator
+    workflow.add_edge("select_platform", "orchestrator")
+
+    # Conditional routing from orchestrator
     workflow.add_conditional_edges(
-        "get_insights",
-        route_to_evolution,
+        "orchestrator",
+        route_from_orchestrator,
         {
-            "adapt_prompts": "select_agent_repository",  # Route to repo selection first
-            END: END  # Skip repo selection if not evolving
+            "get_insights": "get_insights",  # For INSIGHTS
+            "select_agent_repository": "select_agent_repository",  # For EVOLUTION
+            "generate_synthetic_tasks": "generate_synthetic_tasks",  # For GENERATE_TASKS
+            END: END  # For DIRECT responses
         }
     )
 
-    # After selecting repo, go to evolution
+    # After insights, conditionally route to self-questioning or END
+    workflow.add_conditional_edges(
+        "get_insights",
+        route_after_insights,
+        {
+            "generate_synthetic_tasks": "generate_synthetic_tasks",  # Auto-trigger if enabled
+            END: END  # Skip if disabled or no insights
+        }
+    )
+
+    # After repo selection, go to evolution
     workflow.add_edge("select_agent_repository", "adapt_prompts")
+
+    # After evolution, end
     workflow.add_edge("adapt_prompts", END)
-    
-    logger.info("Graph built successfully with conditional routing and memory checkpointer")
+
+    # After task generation, end
+    workflow.add_edge("generate_synthetic_tasks", END)
+
+    logger.info("Graph built successfully with orchestrator-based routing and memory checkpointer")
     return workflow.compile(checkpointer=memory)
 
 # Build the graph
@@ -1317,6 +1624,10 @@ async def run_agent(
         "research_results": "",
         "output_file_path": "",
         "messages": [],
+        "orchestrator_decision": "",
+        "orchestrator_response": "",
+        "orchestrator_reasoning": "",
+        "generated_tasks": [],  # Initialize empty list for synthetic tasks
     }
 
     # Configure thread for memory persistence
@@ -1333,9 +1644,12 @@ async def run_agent(
 
     return {
         "question": result["user_question"],
-        "insights": result["insights"],
-        "research_results": result["research_results"],
-        "output_file_path": result["output_file_path"],
+        "insights": result.get("insights", ""),
+        "research_results": result.get("research_results", ""),
+        "output_file_path": result.get("output_file_path", ""),
+        "orchestrator_response": result.get("orchestrator_response", ""),
+        "orchestrator_decision": result.get("orchestrator_decision", ""),
+        "orchestrator_reasoning": result.get("orchestrator_reasoning", ""),
     }
 
 
@@ -1406,18 +1720,29 @@ def _print_welcome_message(
 ) -> None:
     """Print welcome message for interactive mode."""
     print("\n" + "="*80)
-    print("Adaptive - Unified Multi-Agent Workflow (Interactive Mode)")
+    print("Adaptive - Orchestrator-Based Multi-Agent System (Interactive Mode)")
     print("="*80)
-    print("Workflow: Insights Agent -> Evolution Agent")
-    print("  1. Insights Agent: Analyzes observability traces and generates insights")
-    print("  2. Evolution Agent: Optimizes system prompts based on agent performance")
+    print("Architecture: Orchestrator → Sub-Agents")
+    print("  • Orchestrator: Intelligently routes requests to specialized sub-agents")
+    print("  • Sub-Agents:")
+    print("    - Insights: Analyzes observability traces and generates insights")
+    print("    - Evolution: Optimizes prompts and improves agent code")
+    print("    - Generate Tasks: Creates synthetic test cases for capability testing")
+    print("\nFeatures:")
+    print("  • Handles simple queries directly (greetings, questions)")
+    print("  • Routes complex tasks to specialized agents")
+    print("  • Conversation memory with semantic search (AgentCore)")
     if session_id:
         print(f"\nSession ID: {session_id}")
     else:
         print("\nSession ID: Not provided (analysis may be limited)")
     print(f"Thread ID: {thread_id} (conversation memory enabled)")
-    print("\nType your questions about agent execution traces.")
-    print("Commands: 'quit', 'exit', or 'done' to exit")
+    print("\nExamples:")
+    print("  - 'Hello' → Direct response from orchestrator")
+    print("  - 'What errors occurred?' → Routes to Insights agent")
+    print("  - 'Optimize my prompts' → Routes to Evolution agent")
+    print("  - 'Generate test cases' → Routes to Generate Tasks agent")
+    print("\nCommands: 'quit', 'exit', or 'done' to exit")
     print("="*80 + "\n")
 
 
@@ -1506,20 +1831,32 @@ def _run_interactive_session(
 
                 # Display results
                 print("\n" + "="*80)
-                # Show insights if available
-                if result.get('insights'):
-                    print(result['insights'])
 
-                # Show research results if available
-                if result.get('research_results'):
-                    if result.get('insights'):  # Add separator if both exist
-                        print("\n" + "-"*80 + "\n")
-                    print(result['research_results'])
+                # Check orchestrator decision to determine what to display
+                orchestrator_decision = result.get('orchestrator_decision', '')
 
-                # Show file path if report was generated
-                if result.get('output_file_path'):
-                    print("\n" + "-"*80)
-                    print(f"📄 Report saved to: {result['output_file_path']}")
+                # Only show orchestrator_response if decision was DIRECT
+                if orchestrator_decision == 'DIRECT':
+                    orchestrator_response = result.get('orchestrator_response', '')
+                    if orchestrator_response:
+                        print(orchestrator_response)
+                else:
+                    # For INSIGHTS, EVOLUTION, GENERATE_TASKS - show the agent outputs
+                    # Show insights if available
+                    if result.get('insights'):
+                        print(result['insights'])
+
+                    # Show research results if available
+                    if result.get('research_results'):
+                        if result.get('insights'):  # Add separator if both exist
+                            print("\n" + "-"*80 + "\n")
+                        print(result['research_results'])
+
+                    # Show file path if report was generated
+                    if result.get('output_file_path'):
+                        print("\n" + "-"*80)
+                        print(f"📄 Report saved to: {result['output_file_path']}")
+
                 print("="*80)
 
             except Exception as e:

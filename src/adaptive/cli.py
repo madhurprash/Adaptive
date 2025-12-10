@@ -290,6 +290,60 @@ def _cmd_auth_status() -> int:
     return 0
 
 
+def _cmd_generate_tasks(args) -> int:
+    """Generate synthetic tasks from execution history."""
+    try:
+        # Set logging level
+        if args.debug:
+            logging.getLogger().setLevel(logging.DEBUG)
+            logger.debug("Debug mode enabled")
+
+        # Get project root
+        project_root = _get_project_root()
+        sys.path.insert(0, str(project_root))
+
+        # Import the task generation orchestrator
+        from evolution.self_questioning.task_generation_orchestrator import (
+            TaskGenerationOrchestrator
+        )
+
+        print("\n🔍 Generating synthetic tasks from execution history...\n")
+
+        # Initialize orchestrator
+        orchestrator = TaskGenerationOrchestrator()
+
+        # Generate tasks
+        tasks = orchestrator.generate_tasks(
+            platform=args.platform,
+            max_tasks=args.max_tasks,
+            task_type=args.task_type,
+            agent_repo_path=args.agent_repo,
+        )
+
+        # Display results
+        print(f"\n✅ Generated {len(tasks)} synthetic tasks\n")
+
+        if tasks:
+            print("Task Summary:")
+            print("=" * 70)
+            for i, task in enumerate(tasks, 1):
+                print(f"{i}. [{task.task_type.upper()}] {task.description[:60]}...")
+                print(f"   Difficulty: {task.difficulty} | ID: {task.task_id}")
+                print()
+
+            print(f"✓ Tasks stored in AgentCore Memory")
+            print(f"✓ Run 'adaptive evaluate-tasks' to evaluate agent performance\n")
+        else:
+            print("⚠️  No tasks generated. Try increasing execution history or adjusting filters.\n")
+
+        return 0
+
+    except Exception as e:
+        logger.exception(f"Error generating tasks: {e}")
+        print(f"\n❌ Error generating tasks: {e}\n")
+        return 1
+
+
 def _show_version() -> None:
     """Display version information."""
     try:
@@ -329,6 +383,10 @@ Examples:
     # Manage API keys
     adaptive config set-key langfuse
     adaptive config list-keys
+
+    # Generate synthetic tasks from execution history
+    adaptive generate-tasks --platform langsmith --max-tasks 20
+    adaptive generate-tasks --task-type edge_case --agent-repo /path/to/agent
 
 For more information, visit: https://github.com/madhurprash/adaptive
         """,
@@ -402,6 +460,42 @@ For more information, visit: https://github.com/madhurprash/adaptive
     run_parser.add_argument("--skip-onboarding", action="store_true", help="Skip onboarding checks")
 
     # ========================================================================
+    # GENERATE-TASKS COMMAND
+    # ========================================================================
+    generate_tasks_parser = subparsers.add_parser(
+        "generate-tasks",
+        help="Generate synthetic tasks from execution history"
+    )
+    generate_tasks_parser.add_argument(
+        "--platform",
+        type=str,
+        choices=["langsmith", "langfuse", "mlflow"],
+        help="Observability platform to analyze (optional, will analyze all if not specified)"
+    )
+    generate_tasks_parser.add_argument(
+        "--max-tasks",
+        type=int,
+        default=10,
+        help="Maximum number of tasks to generate (default: 10)"
+    )
+    generate_tasks_parser.add_argument(
+        "--task-type",
+        type=str,
+        choices=["exploration", "edge_case", "optimization", "regression"],
+        help="Specific task type to generate (optional, will generate mixed types if not specified)"
+    )
+    generate_tasks_parser.add_argument(
+        "--agent-repo",
+        type=str,
+        help="Path to agent repository to analyze (optional)"
+    )
+    generate_tasks_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging"
+    )
+
+    # ========================================================================
     # VERSION COMMAND
     # ========================================================================
     subparsers.add_parser("version", help="Show version")
@@ -446,6 +540,9 @@ For more information, visit: https://github.com/madhurprash/adaptive
             session_id=args.session_id,
             skip_onboarding=args.skip_onboarding,
         )
+
+    elif args.command == "generate-tasks":
+        return _cmd_generate_tasks(args)
 
     elif args.command == "version":
         _show_version()

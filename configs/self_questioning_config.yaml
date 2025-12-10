@@ -1,0 +1,131 @@
+general:
+  name: "self_questioning"
+  description: "Configuration for autonomous synthetic task generation system"
+
+# Self-Questioning Agent Configuration
+# This agent analyzes execution history and generates targeted synthetic tasks
+self_questioning_agent:
+  # Model for task generation
+  model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+  # Inference parameters
+  inference_parameters:
+    temperature: 0.7  # Higher temperature for diverse task generation
+    max_tokens: 4096
+    top_p: 0.92
+    caching: true
+
+# Capability Gap Analyzer Configuration
+capability_gap_analyzer:
+  # Model for analyzing failure patterns and capability gaps
+  model_id: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+  inference_parameters:
+    temperature: 0.3  # Lower temperature for analytical reasoning
+    max_tokens: 2048
+    top_p: 0.92
+  # Minimum number of execution traces required for analysis
+  min_traces_for_analysis: 5
+  # Look-back window for trace analysis (in days)
+  trace_analysis_window_days: 7
+
+# Task Generator Configuration
+task_generator:
+  # Maximum number of tasks to generate per session
+  max_tasks_per_session: 10
+  # Task difficulty distribution (must sum to 1.0)
+  difficulty_distribution:
+    easy: 0.3
+    medium: 0.5
+    hard: 0.2
+  # Task type priorities (weights for sampling)
+  task_type_weights:
+    exploration: 0.3      # Tests for unexplored code paths
+    edge_case: 0.3        # Boundary condition tests
+    optimization: 0.2     # Performance improvement tests
+    regression: 0.2       # Tests for known failure patterns
+
+# Diversity Enforcer Configuration
+diversity_enforcer:
+  # Embedding model for task similarity checking
+  embedding_model: "amazon.titan-embed-text-v2:0"
+  # Minimum cosine similarity threshold (0-1, lower = more diverse)
+  # Tasks with similarity above this threshold will be filtered out
+  min_similarity_threshold: 0.85
+  # Embedding dimensions for Titan Embed v2
+  embedding_dimensions: 1024
+  # Maximum tasks to keep in diversity check cache
+  cache_size: 100
+
+# Exploration Agent Configuration
+exploration_agent:
+  # Model for codebase exploration and untested area identification
+  model_id: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+  inference_parameters:
+    temperature: 0.2
+    max_tokens: 2048
+    top_p: 0.92
+  # File patterns to include in exploration
+  include_patterns:
+    - "**/*.py"
+    - "**/*.yaml"
+    - "**/*.yml"
+  # File patterns to exclude from exploration
+  exclude_patterns:
+    - "**/__pycache__/**"
+    - "**/.*"
+    - "**/tests/**"
+    - "**/test_*.py"
+    - "**/*.pyc"
+
+# Task Storage Configuration
+task_storage:
+  # AgentCore Memory namespace for synthetic tasks
+  memory_namespace: "synthetic_tasks"
+  # Task metadata to store
+  metadata_fields:
+    - task_id
+    - task_type
+    - difficulty
+    - generation_timestamp
+    - source_insights
+    - target_capability
+  # Maximum tasks to store per user
+  max_tasks_per_user: 1000
+  # Task expiration (in days, 0 = no expiration)
+  task_expiration_days: 30
+
+# Background Process Configuration
+background_process:
+  # Enable automatic background task generation
+  enabled: false  # Set to true to enable automatic generation
+  # Schedule for task generation (cron format)
+  # Default: every 6 hours
+  schedule: "0 */6 * * *"
+  # Maximum execution time for background process (in minutes)
+  max_execution_time_minutes: 30
+  # Platforms to analyze (empty list = all available)
+  target_platforms:
+    - langsmith
+    - langfuse
+    - mlflow
+
+# Evaluation Integration Configuration
+evaluation:
+  # Enable automatic evaluation of generated tasks
+  auto_evaluate: false  # Set to true to run evaluation automatically
+  # Batch size for task evaluation
+  evaluation_batch_size: 5
+  # Success rate threshold for triggering evolution (0-1)
+  evolution_trigger_threshold: 0.7
+  # Evaluation results storage
+  results_storage:
+    directory: "evaluation_results"
+    format: "json"
+
+# Logging Configuration
+logging:
+  # Log level for self-questioning module
+  level: INFO
+  # Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  # Log file path (empty = console only)
+  log_file: "logs/self_questioning.log"

@@ -1,0 +1,65 @@
+Human: You are an exploration agent for analyzing codebases and generating synthetic test tasks. You will be provided
+with agent architectures and code implementations and you role is to analyze the files, the structure of the project and what
+all constitute the agent architecture. View the basic agent information in the <basic_info></basic_info> xml tags below:
+
+<basic_info>
+AGENT NAME: {agent_name}
+AGENT CODEBASE PATH: {agent_codebase_path}
+</basic_info>
+
+Follow the important instructions below in the <instructions></instructions tags>. Also, view the mission below in the <mission></mission> xml tags below:
+
+<mission>
+Your mission is to explore the agent's codebase and generate "exploration" type tasks that test:
+1. Unexplored code paths and functionality
+2. Edge cases that might not be covered
+3. Novel scenarios the agent hasn't encountered
+4. Combinations of tools or features that haven't been tested together
+</mission>
+
+<instructions>
+INSTRUCTIONS:
+1. Understand what the agent does, what tools it has, and what its purpose is
+2. Identify areas that need testing or might have issues
+3. Generate 3-5 diverse exploration tasks
+4. Identify the tools and the external properties that the agent calls, including knowledge stores, tools, MCP servers, 
+etc. Focus on the insights and the gaps to then generate the tasks based on that and be accurate.
+5. Always generate tasks specific to and based on the content provided to you. Do not create unrealistic tasks that might not line
+up in scope of what you see through the insights.
+</instructions>
+
+Each task should:
+- Be specific and actionable
+- Test something new or unexplored
+- Have clear success criteria
+- Specify expected tools the agent should use
+- Have a difficulty level between {min_difficulty} and {max_difficulty}
+
+Respond in JSON format given in the <response_format></response_format> xml tags below:
+
+<response_format>
+{{
+  "codebase_analysis": {{
+    "agent_purpose": "Brief description of what this agent does",
+    "key_tools": ["tool1", "tool2", "tool3"],
+    "identified_gaps": ["gap1", "gap2"],
+    "unexplored_areas": ["area1", "area2"]
+  }},
+  "tasks": [
+    {{
+      "task_description": "Test the agent's ability to handle scenario X that hasn't been covered",
+      "task_type": "exploration",
+      "difficulty_level": 0.65,
+      "expected_tools": ["tool1", "tool2"],
+      "success_criteria": {{
+        "max_execution_time_ms": 5000,
+        "error_rate_threshold": 0.05,
+        "required_outputs": ["output1", "output2"]
+      }},
+      "rationale": "Why this task is important and what it explores"
+    }}
+  ]
+}}
+</response_format>
+
+Assistant:

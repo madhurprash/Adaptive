@@ -83,36 +83,34 @@ deep_research_agent_model_information:
     local_path: "/Users/madhurpt/Desktop/adaptive"  # Path to local agent repository
     github_url: ""  # GitHub URL if type is "github" (e.g., https://github.com/user/repo)
 
-# Routing Configuration
-# Controls conditional routing between insights agent and deep research agent
-routing_configuration:
-  # Small, fast model for routing decisions
-  default_router_model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
-  # Inference parameters for router
-  inference_parameters:
-    temperature: 0.1
-    max_tokens: 100
-    top_p: 0.92
-  router_prompts:
-    # Routing prompt template path
-    router_prompt_path: prompt_templates/router_prompts/routing_decision_prompt.txt
-    # this is the prompt that acts as a router to check the user intent of whether to get insights
-    # or go directly to the evolution engine
-    user_intent_routing: prompt_templates/router_prompts/route_directly_to_evolution_from_insights.txt
+# NOTE: Routing configuration has been replaced by the orchestrator agent
+# The orchestrator handles all routing decisions intelligently
+# See 'orchestrator_agent' section below for orchestrator configuration
 
-# this is the router configuration and contains information about which router to use
-# and when
-router_configuration:
-  # router to detect user intent for insights or evolution
-  user_intent_router:
-    prompt_template_path: prompt_templates/router_prompts/route_directly_to_evolution_from_insights.txt
-    # Small, fast model for platform routing decisions
-    router_model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
-    # Inference parameters for platform router
-    inference_parameters:
-      temperature: 0.1
-      max_tokens: 50
-      top_p: 0.92
+# Orchestrator Agent Configuration
+# The orchestrator is the main agent that decides which sub-agents to invoke
+orchestrator_agent:
+  # Orchestrator prompt template - describes architecture and routing decisions
+  prompt_template_path: prompt_templates/orchestrator_prompt.txt
+  # Model for orchestrator (Sonnet 4 for intelligent routing)
+  model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+  # Inference parameters
+  inference_parameters:
+    temperature: 0.3
+    max_tokens: 2048
+    top_p: 0.92
+    caching: true
+  # Sub-agents that the orchestrator can route to
+  available_subagents:
+    - name: "insights"
+      description: "Analyzes agent execution traces from observability platforms (LangSmith, Langfuse, MLflow)"
+      when_to_use: "User asks about agent behavior, errors, performance, or needs trace analysis"
+    - name: "evolution"
+      description: "Optimizes and improves agent prompts based on error patterns and performance issues"
+      when_to_use: "User wants to improve/optimize prompts, or insights reveal performance issues"
+    - name: "generate_tasks"
+      description: "Generates synthetic test cases to identify capability gaps and untested scenarios"
+      when_to_use: "User explicitly requests task generation or wants to test agent capabilities"
 
 # AgentCore Memory Configuration
 # Manages long-term conversation memory with semantic search and context retrieval
@@ -138,3 +136,51 @@ agentcore_memory:
     keep_recent_messages: 3
     # Maximum messages to store per user before triggering consolidation
     max_messages_before_consolidation: 50
+
+# Self-Questioning Configuration
+# Enables autonomous synthetic task generation for continuous agent improvement
+self_questioning:
+  # Enable or disable self-questioning (set to true to enable automatic task generation)
+  enabled: true
+  # Auto-trigger after insights generation (runs automatically if enabled)
+  auto_trigger_after_insights: true
+  # Self-questioning agent configuration
+  self_questioning_agent:
+    model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+    inference_parameters:
+      temperature: 0.7  # Higher temperature for diverse task generation
+      max_tokens: 4096
+      top_p: 0.92
+      caching: true
+  # Capability gap analyzer configuration
+  capability_gap_analyzer:
+    model_id: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+    inference_parameters:
+      temperature: 0.3  # Lower temperature for analytical reasoning
+      max_tokens: 2048
+      top_p: 0.92
+    min_traces_for_analysis: 5
+    trace_analysis_window_days: 7
+  # Task generator configuration
+  task_generator:
+    max_tasks_per_session: 5  # Reduced for inline generation (use CLI for more)
+    difficulty_distribution:
+      easy: 0.3
+      medium: 0.5
+      hard: 0.2
+    task_type_weights:
+      exploration: 0.3
+      edge_case: 0.3
+      optimization: 0.2
+      regression: 0.2
+  # Diversity enforcer configuration
+  diversity_enforcer:
+    embedding_model: "amazon.titan-embed-text-v2:0"
+    min_similarity_threshold: 0.85
+    embedding_dimensions: 1024
+    cache_size: 100
+  # Task storage configuration
+  task_storage:
+    memory_namespace: "synthetic_tasks"
+    max_tasks_per_user: 1000
+    task_expiration_days: 30
