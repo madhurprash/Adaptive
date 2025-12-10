@@ -37,26 +37,6 @@ Adaptive helps optimize your AI agents through intelligent
 observability and automated code evolution.
 
 ╔══════════════════════════════════════════════════════════════════╗
-║               AUTHENTICATION REQUIRED                            ║
-╚══════════════════════════════════════════════════════════════════╝
-
-To get started, you need to authenticate with Google.
-This will:
-  • Create your Adaptive account (if new)
-  • Or log you into your existing account
-  • Takes less than 30 seconds
-
-This is a one-time setup.
-
-Authenticate with Google now? (Y/n): y
-
-🔄 Starting authentication flow...
-
-🔐 Opening browser for Google authentication...
-
-[Browser opens - sign in with Google or create account]
-
-╔══════════════════════════════════════════════════════════════════╗
 ║            ✅ AUTHENTICATION SUCCESSFUL                          ║
 ╚══════════════════════════════════════════════════════════════════╝
 
